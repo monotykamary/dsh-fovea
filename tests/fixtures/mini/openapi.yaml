@@ -1,0 +1,8 @@
+openapi: 3.0.0
+paths:
+  /api/users/{id}:
+    get:
+      summary: Load a user
+  /api/users:
+    post:
+      summary: Create a user

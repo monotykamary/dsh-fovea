@@ -1,0 +1,4 @@
+# Foveated repository intelligence composed through native DSH services.
+- insert:
+    - id: dsh-fovea
+      name: dsh-fovea

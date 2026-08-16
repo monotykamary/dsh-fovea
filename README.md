@@ -10,8 +10,7 @@ _See the whole workspace, sharp where the agent works and cheap everywhere else.
   <img src="https://raw.githubusercontent.com/monotykamary/dsh-fovea/main/media/cover.svg" alt="dsh-fovea: a DeepSeek-blue code graph glowing sharply at the center and fading toward the edge" width="1100">
 </p>
 
-[![status](https://img.shields.io/badge/status-design%20phase-8b5cf6?style=for-the-badge)](#project-status)
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek-Harness-4D6BFE?style=for-the-badge)](https://github.com/deepseek-ai/deepseek-harness)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek-Harness%200.1.0--rc.6-4D6BFE?style=for-the-badge)](https://github.com/deepseek-ai/deepseek-harness)
 [![architecture](https://img.shields.io/badge/architecture-Cordis--native-22c55e?style=for-the-badge)](https://github.com/deepseek-ai/deepseek-harness/blob/main/docs/architecture.md)
 [![license](https://img.shields.io/badge/license-MIT-f4c430?style=for-the-badge)](LICENSE)
 
@@ -19,143 +18,317 @@ _See the whole workspace, sharp where the agent works and cheap everywhere else.
 
 ---
 
-**dsh-fovea** is the DeepSeek Harness adaptation of [pi-fovea](https://github.com/monotykamary/pi-fovea): a token-budgeted repository map built from a cross-language code graph. A question becomes an interest vector, relevance diffuses through the graph as heat, and the renderer spends detail where it matters. Exact symbols stay sharp near the work; distant architecture collapses into a cheap silhouette.
+**dsh-fovea** adapts [pi-fovea](https://github.com/monotykamary/pi-fovea) into a native DeepSeek Harness plugin and bundle. It compiles a repository into a typed, weighted graph, turns a question or change set into an interest field, diffuses relevance through that graph, and spends a bounded context budget where it matters.
 
-The adaptation is deliberately native to Harness. DSH ToolRuntime remains the tool and policy authority, Cordis owns lifecycle, agent events own proactive context, and the filesystem, subprocess, and spill services keep Fovea inside the active execution world. There is no parallel agent loop or second tool registry.
+The implementation composes with Harness rather than building a parallel host: DSH owns tools, policy, lifecycle, logs, filesystem access, subprocesses, and optional spills. Fovea adds four repository-intelligence tools, continuous structural drift detection, a slash command, and a runtime skill.
 
-> [!IMPORTANT]
-> **Project status:** design-stage repository. The porting boundary has been audited, but no plugin, package, installer, or usable Fovea tools exist yet. The interfaces and behavior below describe the implementation target; roadmap checkboxes distinguish completed design work from pending code.
+## What it provides
 
-## Why Fovea?
+| Surface | Purpose |
+| --- | --- |
+| `fovea_sketch` | Survey feature basins, routes, hubs, and extraction coverage. |
+| `fovea_focus` | Center on a symbol, route, concept, or file and reveal its semantic neighborhood. |
+| `fovea_dwell` | Widen the current focus without repeating disclosed periphery. |
+| `fovea_impact` | Rank the blast radius and review order of files, symbols, worktree changes, or a base-ref diff. |
+| `/fovea` | Human-facing status, reset, sketch, focus, dwell, and impact commands when `ctx.commands` is present. |
+| `fovea` skill | Model/user guidance registered when `ctx.skills` is present. |
+| Continuous sync | Quiet baselining plus logged steering when repository drift is structurally surprising. |
 
-Large repositories spend context before the first edit: finding the feature, reconstructing its neighborhood, tracking drift, and estimating blast radius. Fovea turns those jobs into bounded graph queries.
+Every model tool returns one canonical JSON value:
 
-| | Planned capability | What it unlocks |
-| :-: | --- | --- |
-| 🗺️ | **Repository sketch** | A production-first silhouette without pouring the entire tree into context. |
-| 🔎 | **Focused neighborhood** | Exact signatures, typed relationships, and suggested read windows around a symbol, route, or file. |
-| 🌡️ | **Progressive dwell** | A semantic zoom that reveals newly relevant neighbors without repeating what the agent already saw. |
-| 💥 | **Impact diffusion** | Cross-language review order from changed files, symbols, uncommitted work, or a comparison base. |
-| 📡 | **Continuous sync** | Structural drift becomes transparent, logged steering when it is surprising enough to matter. |
-| 🎯 | **Hard context budgets** | The graph stays complete while each rendered view fits a caller-selected token budget. |
-
-## Planned model surface
-
-| Tool | Question | Planned answer |
-| --- | --- | --- |
-| `fovea_sketch` | Where is everything? | Production hubs, route anchors, inferred regions, and collapsed test/fixture structure. |
-| `fovea_focus` | What is this? | Exact matches, callers, callees, imports, tests, routes, joins, and suggested source windows. |
-| `fovea_dwell` | What else is connected? | Newly lit neighbors from the current agent-scoped focus. |
-| `fovea_impact` | What does this change touch? | A ranked cascade with causal channels such as calls, imports, tests, shared literals, and co-change history. |
-
-Each tool will return a DSH canonical JSON value — a bounded text projection plus token and diagnostic metadata — so Native tool calls and Code Mode observe the same validated result. The initial plugin will keep Fovea explicit rather than rewriting Harness's built-in grep result.
-
-## Planned DSH architecture
-
-```mermaid
-flowchart LR
-  Agent[DSH Agent] -->|agent/pre-step| Sync[Turn sync]
-  Agent -->|tool call| Tools[DSH ToolRuntime]
-  Tools --> Sketch[fovea_sketch]
-  Tools --> Focus[fovea_focus / dwell / impact]
-  Sketch --> Engine[Fovea engine]
-  Focus --> Engine
-  Engine --> FS[ctx.fs]
-  Engine --> Proc[ctx.subprocess]
-  Engine --> Spill[ctx.spillStore]
-  Tools -->|tools/execute| Provenance[Mutation provenance]
-  Provenance --> Sync
-  Sync -->|agent.steer| Agent
-  Agent --> Log[(Durable session log)]
+```ts
+{ text: string, tokens: number, details: Record<string, JSONValue> }
 ```
 
-The bundle is intended to mount as an out-of-tree Cordis plugin in both Web and headless profiles:
+Harness renders `text` to the model while Code Mode and other programmatic callers retain `tokens` and `details`. Fovea does **not** replace native grep or exact file reads: use it to decide where and why, then inspect the selected source precisely.
 
-- **Tools** register through `ctx.tools.register(defineTool(...))`.
-- **Warm context** enters through the `agent/pre-step` waterfall before the request is admitted.
-- **Post-turn drift** is checked at `agent/turn-stopping` and continues through `agent.steer(...)` only when the verdict is structurally meaningful.
-- **Mutation attribution** wraps `tools/execute`, so direct and Code Mode `edit`/`write` calls share one observation path.
-- **Commands and guidance** use `ctx.commands` and `ctx.skills` rather than Pi-specific TUI surfaces.
-- **All model-visible sync context is logged.** DSH's transcript remains the source of truth.
+## Requirements
 
-## The adaptation boundary
+- Node.js `^22.19.0 || >=24.0.0`
+- pnpm `11.20.0` for this checkout
+- DeepSeek Harness services pinned to `0.1.0-rc.6`
+- Cordis `^4.0.1`
+- Git for tracked-file discovery, base-ref impact, and co-change history (plain directories still work)
 
-The original engine was already separated from most Pi UI concerns. The port keeps that advantage but does not mistake Node-only code for a portable Harness integration.
+`@ast-grep/cli` is a runtime dependency. Executable resolution is: `FOVEA_AST_GREP`, then the packaged CLI, then a bare `ast-grep` on the active subprocess provider's `PATH`. A remote subprocess provider cannot execute the host package's binary, so install ast-grep in that execution world or set `FOVEA_AST_GREP` to its provider-visible path.
 
-| Layer | Strategy |
-| --- | --- |
-| Graph types, heat diffusion, joins, basins, ranking, rendering logic | Reuse with minimal algorithmic change. |
-| Extraction, ast-grep, file discovery, git history, caches, provenance, overflow | Retain behavior behind DSH-aware I/O and cancellation adapters. |
-| Focus, dwell, disclosure, sync baselines, charged surprise memory | Move from root-global maps to explicit per-agent, per-workspace state. |
-| Pi extension entry point, TUI settings, hidden messages, hybrid grep takeover | Replace with native DSH tools, events, commands, skills, and Cordis configuration. |
+## Install from this checkout
 
-The intended core API is instance-based. Repository graphs may be shared by canonical workspace identity; mutable focus and sync state may not be shared between agents merely because their `cwd` matches.
+The safe local installer builds this package, records any prior profile dependency, asks the pinned DSH CLI to add the checkout link, and verifies the composed `dsh-fovea` row. It never starts or restarts DSH.
+
+```bash
+# Defaults to the web profile
+pnpm run install:local
+
+# Select another profile
+pnpm run install:local -- --profile tui
+
+# Reuse already-built artifacts
+pnpm run install:local -- --skip-build
+
+# Use a non-default DSH home
+DSH_HOME=/path/to/home pnpm run install:local
+```
+
+Reload or restart the selected running profile after installation. Verify composition directly with:
+
+```bash
+pnpm dlx @deepseek-ai/dsh@0.1.0-rc.6 --profile web --dump-config
+```
+
+Uninstall only the link owned by this checkout and restore the exact previous dependency, if any:
+
+```bash
+pnpm run uninstall:local
+pnpm run uninstall:local -- --profile tui
+```
+
+After an npm release exists, the equivalent profile operation is expected to be:
+
+```bash
+pnpm dlx @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile web add dsh-fovea
+```
+
+## Model tool reference
+
+All roots come from the calling agent's session `cwd`; no Fovea tool accepts an arbitrary filesystem root. Tool `max_tokens` values are clamped to `256–16000`.
+
+### `fovea_sketch(max_tokens?)`
+
+Use once near the start of work in an unfamiliar repository. It emphasizes production anchors and structural hubs while collapsing tests and distant regions.
+
+### `fovea_focus(query, max_tokens?, fresh?, path?, language?, kind?)`
+
+`query` may be a symbol, route, concept, or repository-relative file. Optional filters narrow by path, language, or graph-node kind. Set `fresh` to reset disclosure even when the nucleus matches the previous focus.
+
+Supported kinds are `function`, `method`, `class`, `interface`, `type`, `field`, `decl`, `file`, and `anchor`.
+
+### `fovea_dwell(factor?, max_tokens?)`
+
+Widen the current agent-scoped focus. The default diffusion multiplier is `2`; values below `1.2` are raised to `1.2`, and diffusion time is capped internally.
+
+### `fovea_impact(files?, symbols?, include_uncommitted?, base?, max_tokens?)`
+
+Seed a hypothetical or real change and rank consequences with causal paths. With no explicit seeds it includes uncommitted work; supplying `base` computes a `base...HEAD` comparison unless `include_uncommitted` is also requested.
+
+A productive sequence is:
+
+1. `fovea_sketch` for an unfamiliar repository.
+2. `fovea_focus` on the most concrete task noun.
+3. Native reads/grep on the suggested windows.
+4. `fovea_dwell` only if the first neighborhood is too narrow.
+5. `fovea_impact` before finishing a cross-file change.
+
+## Human command
+
+When the profile provides `ctx.commands`, dsh-fovea registers:
+
+```text
+/fovea status
+/fovea reset
+/fovea sketch
+/fovea focus <query>
+/fovea dwell [factor]
+/fovea impact [files...]
+```
+
+`/fovea <query>` is also a focus shortcut. Command output uses the configured default budget.
+
+## Configuration
+
+The bundle patch inserts one row with id `dsh-fovea`. Override it in the selected profile's `$DSH_HOME/profiles/<profile>/cordis.patch.yml` (or a later `--patch` layer):
+
+```yaml
+- id: dsh-fovea
+  config:
+    defaultBudget: 768
+    toolTimeoutMs: 120000
+    sync:
+      mode: enabled
+      scope: session
+      budget: 512
+      steerThreshold: 0.15
+      pushFocus: true
+      warmMutations: true
+```
+
+| Key | Default | Valid values |
+| --- | ---: | --- |
+| `defaultBudget` | `512` | integer `256–16000` |
+| `toolTimeoutMs` | `120000` | integer `1000–2147483647` |
+| `sync.mode` | `enabled` | `enabled`, `hidden`, or `disabled` |
+| `sync.scope` | `session` | `session` or `repository` |
+| `sync.budget` | `512` | integer `128–8192` |
+| `sync.steerThreshold` | `0.15` | finite number `0.02–8` |
+| `sync.pushFocus` | `true` | boolean |
+| `sync.warmMutations` | `true` | boolean |
+
+Unknown configuration keys fail plugin loading. `enabled` emits plugin `notice` messages; `hidden` uses plugin `instructions` messages for the model; `disabled` removes sync and mutation-attribution hooks while keeping explicit tools, command, and skill. The deployment-level `FOVEA_TURN_SYNC=off` (also `0` or `false`) escape hatch always forces disabled mode.
+
+### Advanced environment controls
+
+These are deployment-level tuning controls read when modules load:
+
+| Variable | Default | Range / meaning |
+| --- | ---: | --- |
+| `FOVEA_AST_GREP` | packaged CLI | Execution-world ast-grep path/name override |
+| `FOVEA_TURN_SYNC` | unset | `off`, `0`, or `false` disables continuous sync |
+| `FOVEA_MAX_FILES` | `8000` | `100–100000` discovered files |
+| `FOVEA_MAX_FILE_BYTES` | `1048576` | `65536–67108864` bytes per source |
+| `FOVEA_MAX_ROOTS` | `2` | `1–32` resident workspace graphs |
+| `FOVEA_MAX_AGENT_SESSIONS` | `32` | `1–4096` resident agent/session attention states |
+| `FOVEA_SPAWN_CONCURRENCY` | `3` | `1–32` concurrent subprocess stages |
+| `FOVEA_IO_CONCURRENCY` | `32` | `4–512` concurrent provider I/O operations |
+| `FOVEA_MAX_SUBMODULE_DEPTH` | `4` | `1–16` nested repository depth |
+| `FOVEA_AST_GREP_CHUNK` | `160` | `32–2048` files per parser chunk |
+| `FOVEA_PROBE_TTL_MS` | `1200` | `200–60000` send-path Git probe interval |
+| `FOVEA_MEMORY_HALF_LIFE_HOURS` | `48` | `1–8760` surprise-memory half-life |
+| `FOVEA_COCHANGE_HALF_LIFE_DAYS` | `30` | `1–3650` co-change half-life |
+| `FOVEA_WALK_GAP_MS` | `4000` | `500–300000` plain-root relist gap |
+| `FOVEA_SWEEP_GAP_MS` | `20000` | `2000–600000` plain-root full sweep gap |
+
+Invalid integer environment values fall back to the listed default.
 
 ## Continuous sync
 
-The target sync loop preserves Fovea's useful behavior while adopting Harness's turn semantics:
+The lifecycle integration is active unless `sync.mode` is `disabled`:
 
-1. `agent/session-start` establishes a quiet content-hash baseline.
-2. Successful mutation tools record exact before/after evidence and can warm the next comparison.
-3. `agent/pre-step` reuses a warmed verdict when the same turn already owes another model step.
-4. `agent/turn-stopping` compares symbols, calls, imports, literals, and anchors once the model otherwise owes no response.
-5. Meaningful surprise calls `agent.steer(...)`; clean or previously charged cascades remain silent.
+1. `agent/session-start` begins indexing asynchronously and establishes a quiet content-hash baseline.
+2. Successful tools named `write` or `edit` with a string `file_path` receive best-effort before/after hash attribution without replacing those tools.
+3. `tools/result` can warm graph refresh and impact math after such mutations.
+4. `agent/pre-step` performs a deferred drift check and appends model context only when a prepared red verdict exists.
+5. `agent/turn-stopping` performs the full correctness check and calls `agent.steer(...)` only for a red verdict.
+6. Branch checkout generations re-baseline quietly; charged cascades cool over time instead of echoing every turn.
 
-Registered mutation tools can provide provenance evidence. Shell side effects, external editors, and unobserved processes will remain `unattributed` unless stronger evidence exists. A custom `fovea-sync` message source will render as a compact notice. Unlike Pi's optional hidden transcript mode, Harness-visible context will stay durable and inspectable.
+Shell side effects, external editors, and other mutation paths remain `unattributed`. Provenance distinguishes current-session, other-session, mixed, and unattributed transitions when exact hash chains permit it. Current DSH provenance is process-memory scoped, bounded to 2,048 records, and pruned after seven days.
 
-## Safety and correctness commitments
+All injected context uses DSH message sources under plugin `dsh-fovea`, so Harness owns transcript durability and presentation.
 
-- **Workspace-owned roots.** Tool arguments will not accept arbitrary filesystem roots; the calling agent supplies the workspace.
-- **Opaque identity.** Cache keys use `FsTarget.targetKey` while subprocesses receive only `ctx.fs.processPath(...)`.
-- **One execution world.** Repository reads, ast-grep, and git follow the composed `ctx.fs`/`ctx.subprocess` providers.
-- **Cooperative cancellation.** `exec.signal` stops scheduling and terminates owned process trees before a call settles.
-- **Lossless JSON.** Tool values contain no `undefined`, non-finite numbers, typed arrays, or host objects.
-- **Agent isolation.** Focus depth, disclosed nodes, sync baselines, and surprise memory are scoped to the calling agent.
-- **Explicit project trust.** Repository-owned extraction rules remain off until a deployment deliberately enables them.
-- **Bounded overflow.** Full views spill through `ctx.spillStore` instead of writing model-facing paths into a shared temporary directory.
+## Architecture and adaptation boundary
 
-## How the map works
+```mermaid
+flowchart LR
+  Agent[DSH Agent] -->|tool call| Tools[ctx.tools / ToolRuntime]
+  Agent -->|session-start, pre-step, turn-stopping| Sync[Continuous sync]
+  Tools --> Adapter[DshFoveaRuntime]
+  Sync --> Adapter
+  Adapter --> FS[ctx.fs]
+  Adapter --> Proc[ctx.subprocess]
+  Adapter --> Spill[optional ctx.spillStore]
+  Adapter --> Core[Reusable Fovea core]
+  Core --> Shared[(Graph + facts by FsTarget targetKey)]
+  Core --> Scoped[(Focus + disclosure + sync memory by workspace and agent)]
+  Sync -->|red verdict: agent.steer| Agent
+```
 
-In pi-fovea, a repository compiles to a typed graph of files, symbols, routes, imports, calls, tests, inheritance, and normalized literal joins. dsh-fovea is intended to preserve that model: a query becomes a source vector `s` over those nodes, and the field shown to the model is a heat kernel over the symmetric normalized graph Laplacian:
+| Layer from pi-fovea | dsh-fovea strategy |
+| --- | --- |
+| Graph types, joins, basins, extraction facts, heat diffusion, ranking, rendering | Reused with minimal algorithmic change. |
+| Filesystem discovery, ast-grep, Git, caches, provenance, overflow | Retained behind the `FoveaRuntime` capability seam and DSH providers. |
+| Focus, dwell, disclosure, sync baselines, surprise memory | Agent/workspace-scoped rather than root-global. |
+| Pi entry point, event names, TUI widgets/settings, hidden-message API, grep takeover | Not reused; replaced by Cordis plugin loading, canonical DSH tools, agent events, command, skill, and system-prompt guidance. |
 
-$$
-v(t) = e^{-tL} \cdot s \qquad L = I - D^{-1/2} W D^{-1/2}
-$$
+There is intentionally no browser client plugin: dsh-fovea contributes server/runtime behavior and appears through existing Harness tool, command, skill, and transcript surfaces.
 
-Different tools observe the same graph at different timescales: sketch is broad, focus is sharp, dwell widens the current focus, and impact diffuses outward from change seeds. A Chebyshev recurrence evaluates the kernel without materializing a dense matrix; cached basis vectors let later timescales reuse the expensive walk.
+### Execution-world rules
 
-The source engine currently covers full symbols and calls for **TypeScript, TSX, JavaScript, Python, Go, and Rust**; outline symbols for **Elixir, Ruby, C, C++, Java, Kotlin, Lua, PHP, Swift, Scala, Haskell, and Bash**; and literal joins across **YAML, JSON, TOML, env, Markdown, and OpenAPI**. Preserving that coverage is a porting target, not yet verified DSH compatibility.
+- Repository paths resolve from the calling agent's session `cwd` through `ctx.fs`.
+- Provider `FsTarget.targetKey` identifies shared graph/fact state; `ctx.fs.processPath(...)` crosses only into the matching subprocess provider.
+- Git and ast-grep run through `ctx.subprocess`, with bounded output, timeout, cancellation, and process-tree ownership.
+- DSH cache/provenance entries are bounded in-memory data: 32 MiB per entry and 128 MiB total. They do not survive a DSH process restart.
+- The standalone Node adapter uses private temporary-disk cache files instead.
+- Complete overflow lists use optional `ctx.spillStore` only for top-level tool calls that carry session/call ownership. Command and sync rendering stays bounded without creating unowned spills.
 
-See [pi-fovea's heat-diffusion notes](https://github.com/monotykamary/pi-fovea/blob/main/docs/heat-diffusion.md) for the existing algorithm and conductance model that this port will preserve.
+## Indexing, coverage, and limits
 
-## Project status
+Fovea keeps the graph complete only within its configured indexing envelope; every rendered answer remains token-bounded.
 
-- [x] Audit pi-fovea's reusable engine and host-specific surface.
-- [x] Map Pi lifecycle behavior to DSH tools, agent events, commands, skills, and capability seams.
-- [x] Define the multi-agent state and execution-world constraints for the port.
-- [ ] Scaffold the Cordis bundle and instance-based engine boundary.
-- [ ] Register `fovea_sketch`, `fovea_focus`, `fovea_dwell`, and `fovea_impact`.
-- [ ] Port incremental indexing, spill handling, cancellation, and provenance.
-- [ ] Port continuous turn sync with durable DSH message attribution.
-- [ ] Adapt the existing math, extraction, rendering, workspace, and sync test suites.
-- [ ] Publish the first installable release.
+- Default discovery stops at 8,000 supported files.
+- Sources over 1 MiB, generated/minified bundles, unreadable files, and parser-failed chunks are omitted or degraded and reported in `details` and `/fovea status`.
+- Ignored directories include `.git`, `node_modules`, `dist`, `vendor`, virtual environments, build outputs, coverage, `target`, and common dependency caches.
+- Nested repositories/submodules are progressively enrolled when observed work touches them instead of being traversed eagerly.
+- Plain non-Git roots use provider directory walks. Git roots additionally gain tracked/untracked discovery, base diffs, and recency-decayed co-change history.
+- Repository-owned `.fovea/rules.json` is loaded automatically and extends built-in anchor/file-route rules. Treat repository rule files as trusted project configuration.
 
-Target baseline: Node.js `^22.19.0 || >=24`, pnpm 11, DeepSeek Harness `0.1.0-rc.6`, git, and [ast-grep](https://ast-grep.github.io/) in the active execution world. Because Harness is in developer preview, host compatibility will be pinned and reviewed release by release.
+The implemented language tiers are:
 
-There are intentionally no installation commands yet. The README will add `dsh plugin --profile ... add ...` only after a built bundle and composed-profile verification exist.
+- Full symbol/call extraction: TypeScript, TSX, JavaScript, Python, Go, and Rust.
+- Outline-symbol extraction: Elixir, Ruby, C, C++, Java, Kotlin, Lua, PHP, Swift, Scala, Haskell, and Bash.
+- Literal/config joins: YAML, JSON, TOML, env, Terraform/HCL, Markdown, and route conventions including OpenAPI-style paths.
+
+Framework and language coverage is tiered; an empty result is not proof of absence when extraction reports degraded coverage.
+
+### Repository rule example
+
+```json
+{
+  "rules": [
+    {
+      "id": "custom-http-route",
+      "langs": ["TypeScript"],
+      "pattern": "$R.endpoint($P, $$$H)",
+      "methods": "^endpoint$",
+      "kind": "route"
+    }
+  ],
+  "fileRoutes": [
+    {
+      "id": "custom-file-route",
+      "re": "(?:^|/)endpoints/(.+)\\.ts$",
+      "verbs": "suffix",
+      "kind": "route"
+    }
+  ]
+}
+```
+
+Malformed or invalid entries are ignored and built-in rules remain active.
+
+## Programmatic core API
+
+The `dsh-fovea/core` export supports local Node consumers through the same runtime seam:
+
+```ts
+import {
+  NodeFoveaRuntime,
+  sketch,
+  withFoveaRuntime,
+} from 'dsh-fovea/core'
+
+const runtime = new NodeFoveaRuntime(process.cwd(), { scopeKey: 'example' })
+const result = await withFoveaRuntime(runtime, () =>
+  sketch(runtime.processRoot, 512),
+)
+console.log(result.text)
+```
+
+Implementations embedding the engine can provide their own `FoveaRuntime`; operations must always execute inside `withFoveaRuntime(...)`.
+
+## Development and verification
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run build
+pnpm run test
+pnpm run verify
+
+# Complete release gate
+pnpm run check
+```
+
+The tests cover core math/rendering/configuration, workspace/agent isolation, real DSH fs and subprocess execution, canonical tool values, optional command/skill registration, lifecycle steering, mutation provenance, and spill behavior. The verifier imports built entry points and checks bundle, exports, artifacts, and Pi-host dependency hygiene.
+
+Pinned baseline: DeepSeek Harness `0.1.0-rc.6`. Harness is in developer preview, so compatibility is reviewed release by release.
 
 ## Relationship to the other projects
 
-- [**pi-fovea**](https://github.com/monotykamary/pi-fovea) owns the proven graph, diffusion, rendering, and Pi integration from which this adaptation begins.
-- [**dsh-fabric**](https://github.com/monotykamary/dsh-fabric) establishes the pattern: preserve DSH's authority, adapt through documented Cordis seams, and make host-specific limitations explicit.
-- [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) owns the agent loop, session log, tools, policies, execution providers, and browser surface this plugin composes with.
+- [**pi-fovea**](https://github.com/monotykamary/pi-fovea) is the original implementation and source of the graph, diffusion, rendering, and repository-intelligence design.
+- [**dsh-fabric**](https://github.com/monotykamary/dsh-fabric) established the out-of-tree DSH bundle and installer conventions followed here.
+- [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) owns the agent loop, session log, tools, policy, execution providers, and browser shell with which this plugin composes.
 
-## Acknowledgments
+## License and acknowledgments
 
-- Built for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
-- Adapted from [pi-fovea](https://github.com/monotykamary/pi-fovea).
-- Fovea's original direction began with a request from [Alp](https://www.patreon.com/cw/alpderps) for a better repository-intelligence extension.
+MIT © [Tom Nguyen](https://github.com/monotykamary). See [`LICENSE`](LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-## License
-
-MIT © [Tom Nguyen](https://github.com/monotykamary). See [`LICENSE`](LICENSE).
+Built for DeepSeek Harness, adapted from pi-fovea, with Fovea's original direction inspired by a request from [Alp](https://www.patreon.com/cw/alpderps) for better repository intelligence.
