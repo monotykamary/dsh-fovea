@@ -7,15 +7,15 @@ describe('DSH Fovea config', () => {
     expect(DEFAULT_CONFIG).toMatchObject({
       defaultBudget: 512,
       toolTimeoutMs: 120_000,
-      sync: { mode: 'enabled', budget: 512, steerThreshold: 0.15, pushFocus: true, warmMutations: true },
+      sync: { mode: 'enabled', budget: 512, steerThreshold: 0.15, pushFocus: true, ackClean: false, warmMutations: true },
     })
   })
 
   it('detaches and fills a partial Cordis config', () => {
-    const input = { defaultBudget: 900, sync: { mode: 'hidden' as const, pushFocus: false } }
+    const input = { defaultBudget: 900, sync: { mode: 'hidden' as const, pushFocus: false, ackClean: true } }
     const resolved = resolveConfig(input)
     expect(resolved.defaultBudget).toBe(900)
-    expect(resolved.sync).toMatchObject({ mode: 'hidden', budget: 512, pushFocus: false })
+    expect(resolved.sync).toMatchObject({ mode: 'hidden', budget: 512, pushFocus: false, ackClean: true })
     input.sync.pushFocus = true
     expect(resolved.sync.pushFocus).toBe(false)
   })
@@ -38,6 +38,7 @@ describe('DSH Fovea config', () => {
     [{ toolTimeoutMs: 999 }, /toolTimeoutMs/],
     [{ sync: { mode: 'visible' } }, /sync.mode/],
     [{ sync: { steerThreshold: Number.NaN } }, /sync.steerThreshold/],
+    [{ sync: { ackClean: 'yes' } }, /sync.ackClean/],
   ])('rejects malformed input %#', (input, message) => {
     expect(() => resolveConfig(input as never)).toThrow(message)
   })

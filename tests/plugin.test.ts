@@ -144,6 +144,44 @@ describe('DSH plugin registration', () => {
     await ctx.fiber.dispose()
   }, 30_000)
 
+  it('acks clean structural checks only when sync.ackClean is enabled', async () => {
+    const subject = {
+      id: 'agent-fovea-ack',
+      session: { id: 'session-fovea-ack', header: { cwd: root } },
+      steer() {},
+    } as never
+    const ctx = await mount({ sync: { mode: 'enabled', ackClean: true, warmMutations: false } })
+    const events = agentEvents(ctx, subject)
+    const signal = new AbortController().signal
+    events.emit('agent/session-start', { source: 'startup' })
+    await events.serial('agent/turn-stopping', { turn: 1, signal })
+
+    const prompt = createUserMessage({
+      content: [{ type: 'text', text: 'go' }],
+      source: { kind: 'plugin', plugin: 'dsh-fovea-test' },
+    })
+    const enter = () => Promise.resolve({ kind: 'enter' as const, messages: [prompt] })
+
+    // Baseline establishment never acks: it is not a task-relevant check.
+    const baseline = await events.waterfall('agent/pre-step', { messages: [prompt], turn: 1, step: 1, signal }, enter)
+    expect(JSON.stringify(baseline)).not.toContain('no new action is needed')
+
+    // Enroll attention, then make a comment-only edit: hash drift, no semantics.
+    const focused = await call(ctx, 'fovea_focus', { query: 'loadUser', max_tokens: 600 }, subject)
+    expect(focused.isError).toBe(false)
+    const file = join(root, 'src', 'users.ts')
+    await writeFile(file, '// touched\n' + await readFile(file, 'utf8'))
+    await events.serial('agent/turn-stopping', { turn: 2, signal })
+
+    const acked = await events.waterfall('agent/pre-step', { messages: [prompt], turn: 2, step: 1, signal }, enter)
+    expect(acked.kind).toBe('enter')
+    expect(JSON.stringify(acked)).toContain('no new action is needed')
+    expect(JSON.stringify(acked)).toContain('dsh-fovea')
+
+    events.emit('agent/disposed', {})
+    await ctx.fiber.dispose()
+  }, 30_000)
+
   it('keeps unrelated umbrella siblings quiet until the agent enters them', async () => {
     await rm(join(root, 'package.json'))
     await mkdir(join(root, 'repo-a'))

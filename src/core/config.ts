@@ -22,6 +22,8 @@ export interface Config {
     steerThreshold?: number
     /** Embed a compact focus preview in red syncs instead of only suggesting a follow-up. */
     pushFocus?: boolean
+    /** Emit a tiny model-visible ack when a clean sync checks and finds nothing new. */
+    ackClean?: boolean
     /** Warm graph state after successful mutation tools to shorten turn-stop latency. */
     warmMutations?: boolean
   }
@@ -36,6 +38,7 @@ export interface ResolvedConfig {
     budget: number
     steerThreshold: number
     pushFocus: boolean
+    ackClean: boolean
     warmMutations: boolean
   }
 }
@@ -49,6 +52,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
     budget: 512,
     steerThreshold: 0.15,
     pushFocus: true,
+    ackClean: false,
     warmMutations: true,
   },
 }
@@ -92,7 +96,7 @@ export function resolveConfig(input: Config = {}): ResolvedConfig {
   const raw = object(input, 'config')
   unknownKeys(raw, ['defaultBudget', 'toolTimeoutMs', 'sync'], 'config')
   const sync = object(raw.sync, 'sync')
-  unknownKeys(sync, ['mode', 'scope', 'budget', 'steerThreshold', 'pushFocus', 'warmMutations'], 'sync')
+  unknownKeys(sync, ['mode', 'scope', 'budget', 'steerThreshold', 'pushFocus', 'ackClean', 'warmMutations'], 'sync')
   const mode = sync.mode ?? DEFAULT_CONFIG.sync.mode
   if (typeof mode !== 'string' || !SYNC_MODES.includes(mode as SyncMode)) {
     throw new TypeError(`dsh-fovea: sync.mode must be one of ${SYNC_MODES.join(', ')}`)
@@ -114,6 +118,7 @@ export function resolveConfig(input: Config = {}): ResolvedConfig {
       budget: integer(sync.budget, DEFAULT_CONFIG.sync.budget, 128, 8_192, 'sync.budget'),
       steerThreshold: number(sync.steerThreshold, DEFAULT_CONFIG.sync.steerThreshold, 0.02, 8, 'sync.steerThreshold'),
       pushFocus: boolean(sync.pushFocus, DEFAULT_CONFIG.sync.pushFocus, 'sync.pushFocus'),
+      ackClean: boolean(sync.ackClean, DEFAULT_CONFIG.sync.ackClean, 'sync.ackClean'),
       warmMutations: boolean(sync.warmMutations, DEFAULT_CONFIG.sync.warmMutations, 'sync.warmMutations'),
     },
   }

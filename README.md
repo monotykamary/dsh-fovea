@@ -149,6 +149,7 @@ The bundle patch inserts one row with id `dsh-fovea`. Override it in the selecte
       budget: 512
       steerThreshold: 0.15
       pushFocus: true
+      ackClean: false
       warmMutations: true
 ```
 
@@ -161,6 +162,7 @@ The bundle patch inserts one row with id `dsh-fovea`. Override it in the selecte
 | `sync.budget` | `512` | integer `128–8192` |
 | `sync.steerThreshold` | `0.15` | finite number `0.02–8` |
 | `sync.pushFocus` | `true` | boolean |
+| `sync.ackClean` | `false` | boolean — tiny "nothing new" ack after a clean structural check |
 | `sync.warmMutations` | `true` | boolean |
 
 Unknown configuration keys fail plugin loading. `enabled` emits plugin `notice` messages; `hidden` uses plugin `instructions` messages for the model; `disabled` removes sync and mutation-attribution hooks while keeping explicit tools, command, and skill. The deployment-level `FOVEA_TURN_SYNC=off` (also `0` or `false`) escape hatch always forces disabled mode.
@@ -198,11 +200,14 @@ The lifecycle integration is active unless `sync.mode` is `disabled`:
 3. `tools/result` can warm graph refresh and impact math after such mutations.
 4. `agent/pre-step` performs a deferred drift check and appends model context only when a prepared red verdict exists.
 5. `agent/turn-stopping` performs the full correctness check and calls `agent.steer(...)` only for a red verdict.
-6. Branch checkout generations re-baseline quietly; charged cascades cool over time instead of echoing every turn.
+6. With `sync.ackClean: true`, a clean structural check outside silent-baseline paths emits one tiny "nothing new" ack — appended like a deferred update so it can never restart an idle agent.
+7. Branch checkout generations re-baseline quietly; charged cascades cool over time instead of echoing every turn.
 
 Shell side effects, external editors, and other mutation paths remain `unattributed`. Provenance distinguishes current-session, other-session, mixed, and unattributed transitions when exact hash chains permit it. Current DSH provenance is process-memory scoped, bounded to 2,048 records, and pruned after seven days.
 
 All injected context uses DSH message sources under plugin `dsh-fovea`, so Harness owns transcript durability and presentation.
+
+The math behind the graph, heat kernel, literal bridges, co-change seeding, inferred basins, discovery mode, and the turn-sync surprise gate is documented in [docs/heat-diffusion.md](docs/heat-diffusion.md).
 
 ## Architecture and adaptation boundary
 
@@ -315,6 +320,9 @@ pnpm run verify
 
 # Complete release gate
 pnpm run check
+
+# Dev probe: build stats + anchor coverage for one or more repos
+pnpm tsx scripts/probe.ts <repo...>
 ```
 
 The tests cover core math/rendering/configuration, workspace/agent isolation, real DSH fs and subprocess execution, canonical tool values, optional command/skill registration, lifecycle steering, mutation provenance, and spill behavior. The verifier imports built entry points and checks bundle, exports, artifacts, and Pi-host dependency hygiene.

@@ -5,7 +5,7 @@ import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { clearDshFoveaAgentScope, DshFoveaRuntime, setDshFoveaAgentScope } from './dsh-runtime.js'
 import { ensureState } from './core/state.js'
 import { captureMutation, finishMutation, type MutationCapture } from './core/provenance.js'
-import { sync, warmSync } from './core/sync.js'
+import { sync, warmSync, type SyncOutcome } from './core/sync.js'
 import { getSession, observeSessionPaths } from './core/session.js'
 import type { ResolvedConfig } from './core/config.js'
 import { withFoveaRuntime } from './runtime.js'
@@ -26,6 +26,8 @@ const mutationPath = (name: string, args: unknown): string | undefined =>
 
 const attentionPath = (args: unknown): string | undefined =>
   argumentPath(args, 'file_path') ?? argumentPath(args, 'path') ?? argumentPath(args, 'workdir')
+
+const ACK_TEXT = 'fovea: checked repository changes; no new action is needed.'
 
 const messageFor = (text: string, mode: ResolvedConfig['sync']['mode']) => createUserMessage({
   content: [{ type: 'text', text }],
@@ -64,6 +66,13 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     attentionByLineage.set(lineage, remembered)
   }
   const attentionFor = (agent: Agent): string[] => [...(attentionByLineage.get(lineageFor(agent)) ?? [])].sort()
+  // pi-fovea parity: a clean structural sync may emit a tiny "nothing new" ack
+  // when sync.ackClean is set. Baseline establishment, deferred verdicts, and
+  // silent sibling-only indexing never ack — they are not task-relevant checks.
+  const ackDue = (outcome: SyncOutcome): boolean =>
+    config.sync.ackClean && outcome.structural &&
+    outcome.details.baseline === undefined && outcome.details.deferred === undefined &&
+    outcome.details.outsideAttention === undefined
   const enqueue = (agent: Agent, task: (signal: AbortSignal) => Promise<void>): void => {
     let work = background.get(agent)
     if (work === undefined) {
@@ -200,6 +209,7 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
         sessionId: lineageFor(agent),
       }, undefined, { probe: 'defer' }))
       if (outcome.red && outcome.text !== undefined) additions.push(messageFor(outcome.text, config.sync.mode))
+      else if (ackDue(outcome)) additions.push(messageFor(ACK_TEXT, config.sync.mode))
     } catch (error: unknown) {
       if (!signal.aborted) ctx.logger.warn('dsh-fovea: pre-step sync failed: %o', error)
     }
@@ -230,6 +240,12 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
         } else {
           agent.steer(messageFor(outcome.text, config.sync.mode))
         }
+      } else if (ackDue(outcome)) {
+        // The ack rides the next prompt like a deferred update: it must never
+        // restart an idle agent, matching pi's UI-only notify semantics.
+        const queued = nextPrompt.get(agent) ?? []
+        queued.push(ACK_TEXT)
+        nextPrompt.set(agent, queued)
       }
     } catch (error: unknown) {
       if (!signal.aborted) ctx.logger.warn('dsh-fovea: turn-stop sync failed: %o', error)
