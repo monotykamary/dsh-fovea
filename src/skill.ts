@@ -1,5 +1,5 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-skill'
+import type { Context } from '@monotykamary/cordis'
+import type {} from '@monotykamary/dsh-skill'
 
 export const FOVEA_SKILL = `# Fovea repository intelligence
 

@@ -1,10 +1,10 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { Context } from '@monotykamary/cordis'
+import type { Agent } from '@monotykamary/dsh-agent'
+import type { CallId } from '@monotykamary/dsh-llm'
 import type { FoveaCommandOptions, FoveaCommandResult, FoveaDirEntry, FoveaPathInfo, FoveaRuntime, FoveaSpillRef } from './runtime.js'
-import type {} from '@deepseek-ai/dsh-fs'
-import type {} from '@deepseek-ai/dsh-spill'
-import type {} from '@deepseek-ai/dsh-subprocess'
+import type {} from '@monotykamary/dsh-fs'
+import type {} from '@monotykamary/dsh-spill'
+import type {} from '@monotykamary/dsh-subprocess'
 
 interface RuntimeCall {
   readonly toolName: string
