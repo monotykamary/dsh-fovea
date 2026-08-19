@@ -73,7 +73,7 @@ DSH_HOME=/path/to/home pnpm run install:local
 Reload or restart the selected running profile after installation. Verify composition directly with:
 
 ```bash
-pnpm dlx @monotykamary/dsh@0.1.0-rc.6 --profile web --dump-config
+pnpm dlx @monotykamary/dsh@0.1.0-rc.7 --profile web --dump-config
 ```
 
 Uninstall only the link owned by this checkout and restore the exact previous dependency, if any:
@@ -86,7 +86,7 @@ pnpm run uninstall:local -- --profile tui
 After an npm release exists, the equivalent profile operation is expected to be:
 
 ```bash
-pnpm dlx @monotykamary/dsh@0.1.0-rc.6 plugin --profile web add dsh-fovea
+pnpm dlx @monotykamary/dsh@0.1.0-rc.7 plugin --profile web add dsh-fovea
 ```
 
 ## Model tool reference
