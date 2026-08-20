@@ -125,7 +125,9 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     members.add(String(agent.session.id))
     lineageMembers.set(lineage, members)
     enqueue(agent, signal => runSyncForAgent(agent, signal, async (root) => {
-      rememberAttention(agent, await observeSessionPaths(root, [root]))
+      // pi-fovea parity: attention starts empty and accumulates only from the
+      // path-bearing tools this conversation actually uses. The session-start
+      // sync just establishes the quiet content-hash baseline.
       const state = await ensureState(root)
       if (!firstMember) return
       await sync(root, {

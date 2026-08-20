@@ -3,7 +3,7 @@
 // periphery, while a new seed/scope resets to sharp context. Cached Chebyshev
 // vectors keep dwell cheap across wider timescales within that focus.
 
-import { agentStateKey, currentRuntime, scopedStateKey, workspaceStateKey } from "../runtime.js";
+import { agentStateKey, scopedStateKey } from "../runtime.js";
 import { AGENT_CACHE_LIMIT } from "./asyncutil.js";
 import type { NodeKind } from "./types.js";
 
@@ -89,48 +89,21 @@ const repoRelativePath = (root: string, input: string): string | undefined => {
   return parts.length ? parts.join("/") : undefined;
 };
 
-const ROOT_MARKERS = new Set([
-  ".git", "package.json", "pyproject.toml", "go.mod", "Cargo.toml",
-  "pom.xml", "build.gradle", "build.gradle.kts",
-]);
-const rootKinds = new Map<string, boolean>();
-
-/** Marked roots are one project; unmarked parents are umbrella workspaces. */
-export const isLogicalProjectRoot = async (root: string): Promise<boolean> => {
-  const key = `${workspaceStateKey(root)}\0${normalized(root)}`;
-  const cached = rootKinds.get(key);
-  if (cached !== undefined) return cached;
-  const entries = await currentRuntime().listDir(root).catch(() => []);
-  const project = entries.some((entry) => ROOT_MARKERS.has(entry.name));
-  rootKinds.set(key, project);
-  while (rootKinds.size > SESSION_CACHE_LIMIT) rootKinds.delete(rootKinds.keys().next().value!);
-  return project;
-};
-
-/** Shared roots treat each top-level child as one logical workspace. A marked
- * project root stays cohesive across src/tests/docs and maps every member to '.'. */
-export const syncScopeForPath = (
-  root: string,
-  input: string,
-  projectRoot = false,
-): string | undefined => {
-  const raw = normalized(input.startsWith("@") ? input.slice(1) : input).replace(/[/]$/, "");
-  const base = normalized(root).replace(/[/]$/, "");
+/** A shared-root session treats each top-level child as a logical workspace.
+ * Root files remain exact scopes, while any descendant maps to its first path
+ * segment. This keeps umbrella indexing broad without letting sibling task
+ * directories enter the active conversation. */
+export const syncScopeForPath = (root: string, input: string): string | undefined => {
   const rel = repoRelativePath(root, input);
-  if (projectRoot) {
-    if (raw === "." || raw === base || rel !== undefined) return ".";
-    return undefined;
-  }
   if (!rel) return undefined;
   const slash = rel.indexOf("/");
   return slash < 0 ? rel : rel.slice(0, slash);
 };
 
-export const observeSessionPaths = async (root: string, paths: readonly string[]): Promise<string[]> => {
+export const observeSessionPaths = (root: string, paths: readonly string[]): string[] => {
   const session = getSession(root);
-  const projectRoot = await isLogicalProjectRoot(root);
   for (const path of paths) {
-    const scope = syncScopeForPath(root, path, projectRoot);
+    const scope = syncScopeForPath(root, path);
     if (scope) session.syncScopes.add(scope);
   }
   return [...session.syncScopes].sort();

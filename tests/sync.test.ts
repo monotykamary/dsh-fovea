@@ -10,7 +10,8 @@ import { ensureState, getState } from "../src/core/ops.js";
 import type { RepoState } from "../src/core/ops.js";
 import { decayedMass, MEMORY_HALF_LIFE_HOURS, resetSyncBaselines, sync, syncBaselineStore, warmSync } from "../src/core/sync.js";
 import type { SyncParams, WarmParams } from "../src/core/sync.js";
-import { resetSessions } from "../src/core/session.js";
+import { observeSessionPaths, resetSessions } from "../src/core/session.js";
+import { captureMutation, finishMutation } from "../src/core/provenance.js";
 import { inNodeRuntime } from "./helpers/runtime.js";
 
 const SRC = new URL("./fixtures/mini", import.meta.url).pathname;
@@ -20,6 +21,8 @@ const syncRoot = (target: string, params: SyncParams, now?: RepoState, opts?: Pa
   inNodeRuntime(target, (processRoot) => sync(processRoot, params, now, opts));
 const warmRoot = (target: string, params: WarmParams) =>
   inNodeRuntime(target, (processRoot) => warmSync(processRoot, params));
+const observeRoot = (target: string, paths: string[]) =>
+  inNodeRuntime(target, (processRoot) => observeSessionPaths(processRoot, paths));
 let root = "";
 
 beforeAll(async () => {
@@ -608,6 +611,91 @@ describe("hot-reload handoff", () => {
       expect(syncBaselineStore()).toBe(cold);
     } finally {
       holder[slot] = backup ?? { v: 1, map: syncBaselineStore() };
+    }
+  });
+});
+
+describe("session-scoped sync delivery", () => {
+  it("defers another session's relevant change to the next prompt", async () => {
+    resetSyncBaselines();
+    resetSessions();
+    const file = "web/api.ts";
+    const path = join(root, file);
+    const original = readFileSync(path, "utf8");
+    try {
+      const initial = await ensureRoot(root);
+      const baseline = await syncRoot(root, {
+        files: [],
+        budget: 512,
+        steerThreshold: 0.01,
+        scope: "session",
+        sessionId: "session-b",
+      }, initial, { probe: "full" });
+      expect(baseline.details.baseline).toBe("established");
+
+      // Session A mutates web/api.ts inside the scope session B later enters;
+      // the mutation is attributed to session A via the provenance journal.
+      await inNodeRuntime(root, async (processRoot) => {
+        await observeSessionPaths(processRoot, [file]);
+        const capture = await captureMutation(processRoot, file);
+        writeFileSync(path, original + 'export const siblingRoute = () => "/sibling";\n');
+        expect(capture).toBeDefined();
+        await finishMutation(capture!, "session-a", "call-1");
+      });
+
+      const outcome = await syncRoot(root, {
+        files: [],
+        budget: 512,
+        steerThreshold: 0.01,
+        scope: "session",
+        sessionId: "session-b",
+      });
+      // Relevant (scope "web" entered) and red, but owned by another session:
+      // the verdict must be deferred, never an immediate steer.
+      expect(outcome.red).toBe(true);
+      expect(outcome.details.provenance).toMatchObject({ kind: "other-session" });
+      expect(outcome.delivery).toBe("next-prompt");
+    } finally {
+      writeFileSync(path, original);
+      resetSyncBaselines();
+      resetSessions();
+    }
+  });
+
+  it("steers a relevant unattributed change immediately", async () => {
+    resetSyncBaselines();
+    resetSessions();
+    const file = "web/api.ts";
+    const path = join(root, file);
+    const original = readFileSync(path, "utf8");
+    try {
+      const initial = await ensureRoot(root);
+      const baseline = await syncRoot(root, {
+        files: [],
+        budget: 512,
+        steerThreshold: 0.01,
+        scope: "session",
+        sessionId: "session-b",
+      }, initial, { probe: "full" });
+      expect(baseline.details.baseline).toBe("established");
+      await observeRoot(root, [file]);
+
+      // External editor drift: no provenance record exists for the change.
+      writeFileSync(path, original + 'export const externalRoute = () => "/external";\n');
+      const outcome = await syncRoot(root, {
+        files: [],
+        budget: 512,
+        steerThreshold: 0.01,
+        scope: "session",
+        sessionId: "session-b",
+      });
+      expect(outcome.red).toBe(true);
+      expect(outcome.details.provenance).toMatchObject({ kind: "unattributed" });
+      expect(outcome.delivery).toBe("steer");
+    } finally {
+      writeFileSync(path, original);
+      resetSyncBaselines();
+      resetSessions();
     }
   });
 });

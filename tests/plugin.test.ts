@@ -131,6 +131,10 @@ describe('DSH plugin registration', () => {
     await events.serial('agent/turn-stopping', { turn: 1, signal })
     expect(steered).toHaveLength(0)
 
+    // pi parity: attention starts empty; revealing src/users.ts enters scope src.
+    const focused = await call(ctx, 'fovea_focus', { query: 'loadUser', max_tokens: 600 }, subject)
+    expect(focused.isError).toBe(false)
+
     const file = join(root, 'src', 'users.ts')
     await writeFile(file, [
       'export function changedRoute() { return "/changed" }',
@@ -183,7 +187,8 @@ describe('DSH plugin registration', () => {
   }, 30_000)
 
   it('keeps unrelated umbrella siblings quiet until the agent enters them', async () => {
-    await rm(join(root, 'package.json'))
+    // The root keeps its project marker: pi-parity scoping isolates by top-level
+    // directory even inside a marked project root.
     await mkdir(join(root, 'repo-a'))
     await mkdir(join(root, 'repo-b'))
     await writeFile(join(root, 'repo-a', 'active.ts'), 'export function activeArea() { return true }\n')
@@ -303,6 +308,11 @@ describe('DSH plugin registration', () => {
     events.emit('agent/session-start', { source: 'startup' })
     agentEvents(ctx, other).emit('agent/session-start', { source: 'startup' })
     await events.serial('agent/turn-stopping', { turn: 1, signal })
+
+    // pi parity: the subject enters scope src by revealing it, so another
+    // session's write to src/users.ts is relevant but deferred to next prompt.
+    const focused = await call(ctx, 'fovea_focus', { query: 'loadUser', max_tokens: 600 }, subject)
+    expect(focused.isError).toBe(false)
 
     const file = join(root, 'src', 'users.ts')
     await call(ctx, 'write', {

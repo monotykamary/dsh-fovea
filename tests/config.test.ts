@@ -7,7 +7,7 @@ describe('DSH Fovea config', () => {
     expect(DEFAULT_CONFIG).toMatchObject({
       defaultBudget: 512,
       toolTimeoutMs: 120_000,
-      sync: { mode: 'enabled', budget: 512, steerThreshold: 0.15, pushFocus: true, ackClean: false, warmMutations: true },
+      sync: { mode: 'enabled', scope: 'session', budget: 512, steerThreshold: 0.15, pushFocus: true, ackClean: false, warmMutations: true },
     })
   })
 
@@ -18,6 +18,11 @@ describe('DSH Fovea config', () => {
     expect(resolved.sync).toMatchObject({ mode: 'hidden', budget: 512, pushFocus: false, ackClean: true })
     input.sync.pushFocus = true
     expect(resolved.sync.pushFocus).toBe(false)
+  })
+
+  it('loads repository-wide sync explicitly', () => {
+    expect(resolveConfig({ sync: { scope: 'repository' } }).sync.scope).toBe('repository')
+    expect(resolveConfig({ sync: { scope: 'repository' } }).sync.mode).toBe('enabled')
   })
 
   it('lets FOVEA_TURN_SYNC=off override the Cordis profile', () => {
@@ -37,6 +42,7 @@ describe('DSH Fovea config', () => {
     [{ defaultBudget: 1 }, /defaultBudget/],
     [{ toolTimeoutMs: 999 }, /toolTimeoutMs/],
     [{ sync: { mode: 'visible' } }, /sync.mode/],
+    [{ sync: { scope: 'workspace' } }, /sync.scope/],
     [{ sync: { steerThreshold: Number.NaN } }, /sync.steerThreshold/],
     [{ sync: { ackClean: 'yes' } }, /sync.ackClean/],
   ])('rejects malformed input %#', (input, message) => {

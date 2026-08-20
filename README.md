@@ -158,7 +158,7 @@ The bundle patch inserts one row with id `dsh-fovea`. Override it in the selecte
 | `defaultBudget` | `512` | integer `256–16000` |
 | `toolTimeoutMs` | `120000` | integer `1000–2147483647` |
 | `sync.mode` | `enabled` | `enabled`, `hidden`, or `disabled` |
-| `sync.scope` | `session` | `session` or `repository` |
+| `sync.scope` | `session` | `session` steers only for top-level directories/root files this conversation entered while indexing the whole root; `repository` restores root-wide steering |
 | `sync.budget` | `512` | integer `128–8192` |
 | `sync.steerThreshold` | `0.15` | finite number `0.02–8` |
 | `sync.pushFocus` | `true` | boolean |
@@ -202,6 +202,8 @@ The lifecycle integration is active unless `sync.mode` is `disabled`:
 5. `agent/turn-stopping` performs the full correctness check and calls `agent.steer(...)` only for a red verdict.
 6. With `sync.ackClean: true`, a clean structural check outside silent-baseline paths emits one tiny "nothing new" ack — appended like a deferred update so it can never restart an idle agent.
 7. Branch checkout generations re-baseline quietly; charged cascades cool over time instead of echoing every turn.
+
+With the default `sync.scope: session`, path-bearing read/search/edit tools, explicit focus/dwell results, and file-seeded impact calls add the top-level logical directory (or exact root file) of every path they touch to that conversation's attention. Fovea still indexes and baselines the whole root; drift solely in sibling directories is absorbed silently into the next baseline instead of becoming model context, so broad umbrella coverage does not become broad model context. Set `sync.scope` to `repository` to restore root-wide steering. A meaningful current, mixed, or unattributed change inside the attention scope still steers at turn stop; a change attributed solely to another agent session is queued for the next user prompt instead and never restarts an idle agent.
 
 Shell side effects, external editors, and other mutation paths remain `unattributed`. Provenance distinguishes current-session, other-session, mixed, and unattributed transitions when exact hash chains permit it. Current DSH provenance is process-memory scoped, bounded to 2,048 records, and pruned after seven days.
 

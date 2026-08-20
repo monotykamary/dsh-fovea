@@ -188,7 +188,7 @@ describe("progressive disclosure refresh", () => {
     }
   });
 
-  it("keeps a marked superproject cohesive while indexing nested drift", async () => {
+  it("indexes nested drift without steering a session focused elsewhere", async () => {
     const superRoot = makeSuperproject();
     resetSyncBaselines();
     resetSessions();
@@ -213,10 +213,14 @@ describe("progressive disclosure refresh", () => {
         sessionId: "session-a",
       });
 
+      // The session entered only the root file top.ts; the sibling submodule's
+      // drift is absorbed silently into the next baseline, never replayed.
       expect(outcome.red).toBe(false);
-      expect(outcome.details).toMatchObject({ attentionScopes: ["."] });
-      expect(outcome.details.outsideAttention).toBeUndefined();
-      expect((outcome.details.ignoredFiles as string[] | undefined) ?? []).not.toContain("sub/a.ts");
+      expect(outcome.details).toMatchObject({
+        outsideAttention: true,
+        attentionScopes: ["top.ts"],
+      });
+      expect((outcome.details.ignoredFiles as string[] | undefined) ?? []).toContain("sub/a.ts");
       expect((await ensureRoot(superRoot)).files).toContain("sub/a.ts");
 
       const again = await syncRoot(superRoot, {

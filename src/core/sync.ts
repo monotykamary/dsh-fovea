@@ -18,7 +18,7 @@ import { gitProbe } from "./git.js";
 import { focus, impact, isTestScope } from "./ops.js";
 import { ensureState, ensureStateBackground, getInflight, getState } from "./state.js";
 import type { RepoState } from "./state.js";
-import { getSession, isLogicalProjectRoot, observeSessionPaths, syncScopeForPath } from "./session.js";
+import { getSession, observeSessionPaths, syncScopeForPath } from "./session.js";
 import { attributeChanges, type SyncProvenance } from "./provenance.js";
 
 interface SyncBaseline {
@@ -401,13 +401,12 @@ export const sync = async (
 
   const session = getSession(root);
   const scopedSync = params.scope !== "repository" && params.sessionId !== undefined;
-  const projectRoot = await isLogicalProjectRoot(root);
   const attention = new Set(params.attentionScopes ?? session.syncScopes);
   const attentionScopes = [...attention].sort();
   const relevantFile = (file: string | undefined): boolean => {
     if (!scopedSync) return true;
     if (!file) return false;
-    const scope = syncScopeForPath(root, file, projectRoot);
+    const scope = syncScopeForPath(root, file);
     return scope !== undefined && attention.has(scope);
   };
   const added = allAdded.filter((id) => relevantFile(currentCarrier.get(id)));
