@@ -94,9 +94,10 @@ describe('DSH plugin registration', () => {
     expect(skill).toMatchObject({ name: 'fovea', source: 'runtime', provider: 'runtime' })
     expect(skill?.content).toContain('fovea_impact')
     const signal = new AbortController().signal
-    const focused = await ctx.commands.execute(agent(), '/fovea focus loadUser', signal)
+    // Linked CommandRuntime execute(agent, line, images, signal): no attachments.
+    const focused = await ctx.commands.execute(agent(), '/fovea focus loadUser', [], signal)
     expect(focused?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('loadUser') })
-    const invalid = await ctx.commands.execute(agent(), '/fovea dwell nope', signal)
+    const invalid = await ctx.commands.execute(agent(), '/fovea dwell nope', [], signal)
     expect(invalid?.result).toEqual({ kind: 'error', text: 'dwell factor must be a positive number' })
     await ctx.fiber.dispose()
   })
