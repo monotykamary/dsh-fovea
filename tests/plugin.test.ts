@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@monotykamary/cordis'
-import { agentEvents } from '@monotykamary/dsh-agent'
+import { agentEvents, type Agent } from '@monotykamary/dsh-agent'
 import { createUserMessage } from '@monotykamary/dsh-llm'
 import LocalFileSystem from '@monotykamary/dsh-fs-local'
 import LocalSubprocessRuntime from '@monotykamary/dsh-subprocess-local'
@@ -76,6 +76,18 @@ function call(ctx: Context, name: string, args: unknown, subject = agent()) {
   })
 }
 
+async function settleSync(ctx: Context, subject: Agent, turn: number, signal: AbortSignal): Promise<void> {
+  const prompt = createUserMessage({
+    content: [{ type: 'text', text: 'settle background sync' }],
+    source: { kind: 'plugin', plugin: 'dsh-fovea-test' },
+  })
+  await agentEvents(ctx, subject).waterfall(
+    'agent/pre-step',
+    { messages: [prompt], turn, step: 1, signal },
+    () => Promise.resolve({ kind: 'enter' as const, messages: [prompt] }),
+  )
+}
+
 describe('DSH plugin registration', () => {
   it('registers four canonical tools and prompt guidance', async () => {
     const ctx = await mount()
@@ -116,6 +128,36 @@ describe('DSH plugin registration', () => {
     await ctx.fiber.dispose()
   }, 30_000)
 
+  it('does not hold turn stopping open behind background indexing', async () => {
+    const subject = {
+      id: 'agent-fovea-nonblocking',
+      session: { id: 'session-fovea-nonblocking', header: { cwd: root } },
+      steer() {},
+    } as never
+    const ctx = await mount({ sync: { mode: 'enabled', warmMutations: false } })
+    const originalListDir = ctx.fs.listDir.bind(ctx.fs)
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    ctx.fs.listDir = async (...args) => {
+      entered.resolve()
+      await release.promise
+      return originalListDir(...args)
+    }
+    const events = agentEvents(ctx, subject)
+    events.emit('agent/session-start', { source: 'startup' })
+    await entered.promise
+
+    const signal = new AbortController().signal
+    await expect(Promise.race([
+      events.serial('agent/turn-stopping', { turn: 1, signal }),
+      new Promise((_resolve, reject) => setTimeout(() => { reject(new Error('turn stopping waited for Fovea indexing')) }, 250)),
+    ])).resolves.toBeUndefined()
+
+    release.resolve()
+    events.emit('agent/disposed', {})
+    await ctx.fiber.dispose()
+  })
+
   it('warms on session start and steers red external drift at turn stop', async () => {
     const steered: unknown[] = []
     const subject = {
@@ -130,6 +172,7 @@ describe('DSH plugin registration', () => {
     events.emit('agent/session-start', { source: 'startup' })
     const signal = new AbortController().signal
     await events.serial('agent/turn-stopping', { turn: 1, signal })
+    await settleSync(ctx, subject, 1, signal)
     expect(steered).toHaveLength(0)
 
     // pi parity: attention starts empty; revealing src/users.ts enters scope src.
@@ -143,6 +186,7 @@ describe('DSH plugin registration', () => {
       '',
     ].join('\n'))
     await events.serial('agent/turn-stopping', { turn: 2, signal })
+    await settleSync(ctx, subject, 2, signal)
     expect(steered).toHaveLength(1)
     expect(steered[0]).toMatchObject({ source: { kind: 'plugin', plugin: 'dsh-fovea', form: 'notice' } })
     events.emit('agent/disposed', {})
@@ -217,6 +261,7 @@ describe('DSH plugin registration', () => {
     const signal = new AbortController().signal
     events.emit('agent/session-start', { source: 'startup' })
     await events.serial('agent/turn-stopping', { turn: 1, signal })
+    await settleSync(ctx, subject, 1, signal)
 
     const focused = await call(ctx, 'fovea_focus', { query: 'activeArea', max_tokens: 600 }, subject)
     expect(focused.isError).toBe(false)
@@ -233,6 +278,7 @@ describe('DSH plugin registration', () => {
       '',
     ].join('\n'))
     await events.serial('agent/turn-stopping', { turn: 2, signal })
+    await settleSync(ctx, subject, 2, signal)
     expect(steered).toHaveLength(0)
 
     await writeFile(join(root, 'repo-a', 'active.ts'), [
@@ -241,6 +287,7 @@ describe('DSH plugin registration', () => {
       '',
     ].join('\n'))
     await events.serial('agent/turn-stopping', { turn: 3, signal })
+    await settleSync(ctx, subject, 3, signal)
     expect(steered).toHaveLength(1)
 
     const childEvents = agentEvents(ctx, child)
@@ -253,6 +300,7 @@ describe('DSH plugin registration', () => {
       '',
     ].join('\n'))
     await events.serial('agent/turn-stopping', { turn: 4, signal })
+    await settleSync(ctx, subject, 4, signal)
     expect(steered).toHaveLength(2)
 
     await writeFile(join(root, 'repo-b', 'other.ts'), [
@@ -264,6 +312,7 @@ describe('DSH plugin registration', () => {
       events.serial('agent/turn-stopping', { turn: 5, signal }),
       childEvents.serial('agent/turn-stopping', { turn: 1, signal }),
     ])
+    await Promise.all([settleSync(ctx, subject, 5, signal), settleSync(ctx, child, 1, signal)])
     expect(steered.length + childSteered.length).toBe(3)
 
     events.emit('agent/disposed', {})
@@ -309,6 +358,7 @@ describe('DSH plugin registration', () => {
     events.emit('agent/session-start', { source: 'startup' })
     agentEvents(ctx, other).emit('agent/session-start', { source: 'startup' })
     await events.serial('agent/turn-stopping', { turn: 1, signal })
+    await settleSync(ctx, subject, 1, signal)
 
     // pi parity: the subject enters scope src by revealing it, so another
     // session's write to src/users.ts is relevant but deferred to next prompt.
@@ -342,6 +392,7 @@ describe('DSH plugin registration', () => {
       content: 'export function childRoute() { return "/child" }\napp.get("/child", childRoute)\n',
     }, child)
     await events.serial('agent/turn-stopping', { turn: 3, signal })
+    await settleSync(ctx, subject, 3, signal)
     expect(steered).toHaveLength(1)
     expect(JSON.stringify(steered[0])).toContain('Origin: current session')
     const [parentRuntime, childRuntime] = await Promise.all([

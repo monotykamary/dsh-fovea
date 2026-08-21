@@ -12,8 +12,12 @@ import { withFoveaRuntime } from './runtime.js'
 
 interface BackgroundWork {
   readonly controller: AbortController
+  readonly warmFiles: Set<string>
+  warmTimer: ReturnType<typeof setTimeout> | undefined
   tail: Promise<void>
 }
+
+const WARM_DEBOUNCE_MS = 250
 
 const argumentPath = (args: unknown, key: 'file_path' | 'path' | 'workdir'): string | undefined => {
   if (typeof args !== 'object' || args === null || !(key in args)) return undefined
@@ -73,18 +77,46 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     config.sync.ackClean && outcome.structural &&
     outcome.details.baseline === undefined && outcome.details.deferred === undefined &&
     outcome.details.outsideAttention === undefined
-  const enqueue = (agent: Agent, task: (signal: AbortSignal) => Promise<void>): void => {
+  const workFor = (agent: Agent): BackgroundWork => {
     let work = background.get(agent)
     if (work === undefined) {
-      work = { controller: new AbortController(), tail: Promise.resolve() }
+      work = {
+        controller: new AbortController(),
+        warmFiles: new Set<string>(),
+        warmTimer: undefined,
+        tail: Promise.resolve(),
+      }
       background.set(agent, work)
     }
+    return work
+  }
+  const enqueue = (agent: Agent, task: (signal: AbortSignal) => Promise<void>): void => {
+    const work = workFor(agent)
     const signal = work.controller.signal
     const next = work.tail.catch(() => undefined).then(() => task(signal))
     work.tail = next
     void next.catch((error: unknown) => {
       if (!signal.aborted) ctx.logger.warn('dsh-fovea: background graph refresh failed: %o', error)
     })
+  }
+  const flushWarm = (agent: Agent, work: BackgroundWork): void => {
+    if (work.warmTimer !== undefined) {
+      clearTimeout(work.warmTimer)
+      work.warmTimer = undefined
+    }
+    if (work.warmFiles.size === 0) return
+    const files = [...work.warmFiles]
+    work.warmFiles.clear()
+    enqueue(agent, signal => runForAgent(agent, signal, root => warmSync(root, {
+      files,
+      budget: config.sync.budget,
+    })))
+  }
+  const scheduleWarm = (agent: Agent, path: string): void => {
+    const work = workFor(agent)
+    work.warmFiles.add(path)
+    if (work.warmTimer !== undefined) clearTimeout(work.warmTimer)
+    work.warmTimer = setTimeout(() => { flushWarm(agent, work) }, WARM_DEBOUNCE_MS)
   }
 
   const runForAgent = async <T>(
@@ -178,17 +210,15 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     })
   })
 
-  // Successful mutations warm extraction and impact math while the model reads
-  // the tool result. A later pre-step or turn-stop remains the correctness path.
+  // Successful mutations debounce and coalesce one background preparation while
+  // the model reads tool results. The turn-stop check is queued after that warm
+  // work, but never waits for it on the Agent lifecycle path.
   if (config.sync.warmMutations) {
     ctx.on('tools/result', (exec, result) => {
       const agent = exec.agent
       const path = mutationPath(exec.name, exec.arguments)
       if (agent === undefined || path === undefined || result.isError) return
-      enqueue(agent, signal => runForAgent(agent, signal, root => warmSync(root, {
-        files: [path],
-        budget: config.sync.budget,
-      })))
+      scheduleWarm(agent, path)
     })
   }
 
@@ -198,9 +228,7 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted) return decision
-    const queued = nextPrompt.get(agent) ?? []
-    nextPrompt.delete(agent)
-    const additions = queued.map(text => messageFor(text, config.sync.mode))
+    const additions: ReturnType<typeof messageFor>[] = []
     try {
       const outcome = await runSyncForAgent(agent, signal, root => sync(root, {
         budget: config.sync.budget,
@@ -215,43 +243,53 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     } catch (error: unknown) {
       if (!signal.aborted) ctx.logger.warn('dsh-fovea: pre-step sync failed: %o', error)
     }
+    // Detached turn-stop work may have completed while this pre-step waited on
+    // the lineage serializer. Drain after that wait so deferred notices reach
+    // this request rather than slipping to a later prompt.
+    const queued = nextPrompt.get(agent) ?? []
+    nextPrompt.delete(agent)
+    additions.unshift(...queued.map(text => messageFor(text, config.sync.mode)))
     return additions.length > 0
       ? { ...decision, messages: [...decision.messages, ...additions] }
       : decision
   })
 
-  ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
+  ctx.on('agent/turn-stopping', ({ agent, signal }) => {
     if (signal.aborted) return
-    const pending = background.get(agent)?.tail
-    if (pending !== undefined) await pending.catch(() => undefined)
-    if (signal.aborted) return
-    try {
-      const outcome = await runSyncForAgent(agent, signal, root => sync(root, {
-        budget: config.sync.budget,
-        steerThreshold: config.sync.steerThreshold,
-        pushFocus: config.sync.pushFocus,
-        scope: config.sync.scope,
-        attentionScopes: attentionFor(agent),
-        sessionId: lineageFor(agent),
-      }, undefined, { probe: 'full' }))
-      if (outcome.red && outcome.text !== undefined) {
-        if (outcome.delivery === 'next-prompt') {
+    const work = workFor(agent)
+    flushWarm(agent, work)
+    enqueue(agent, async (backgroundSignal) => {
+      const operationSignal = AbortSignal.any([signal, backgroundSignal])
+      if (operationSignal.aborted) return
+      try {
+        const outcome = await runSyncForAgent(agent, operationSignal, root => sync(root, {
+          budget: config.sync.budget,
+          steerThreshold: config.sync.steerThreshold,
+          pushFocus: config.sync.pushFocus,
+          scope: config.sync.scope,
+          attentionScopes: attentionFor(agent),
+          sessionId: lineageFor(agent),
+        }, undefined, { probe: 'full' }))
+        if (operationSignal.aborted || background.get(agent) !== work) return
+        if (outcome.red && outcome.text !== undefined) {
+          if (outcome.delivery === 'next-prompt') {
+            const queued = nextPrompt.get(agent) ?? []
+            queued.push(outcome.text)
+            nextPrompt.set(agent, queued)
+          } else {
+            agent.steer(messageFor(outcome.text, config.sync.mode))
+          }
+        } else if (ackDue(outcome)) {
+          // The ack rides the next prompt like a deferred update: it must never
+          // restart an idle agent, matching pi's UI-only notify semantics.
           const queued = nextPrompt.get(agent) ?? []
-          queued.push(outcome.text)
+          queued.push(ACK_TEXT)
           nextPrompt.set(agent, queued)
-        } else {
-          agent.steer(messageFor(outcome.text, config.sync.mode))
         }
-      } else if (ackDue(outcome)) {
-        // The ack rides the next prompt like a deferred update: it must never
-        // restart an idle agent, matching pi's UI-only notify semantics.
-        const queued = nextPrompt.get(agent) ?? []
-        queued.push(ACK_TEXT)
-        nextPrompt.set(agent, queued)
+      } catch (error: unknown) {
+        if (!operationSignal.aborted) ctx.logger.warn('dsh-fovea: turn-stop sync failed: %o', error)
       }
-    } catch (error: unknown) {
-      if (!signal.aborted) ctx.logger.warn('dsh-fovea: turn-stop sync failed: %o', error)
-    }
+    })
   })
 
   ctx.on('agent/disposed', async ({ agent }) => {
@@ -269,6 +307,8 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
       attentionByLineage.delete(lineage)
     }
     if (work === undefined) return
+    if (work.warmTimer !== undefined) clearTimeout(work.warmTimer)
+    work.warmFiles.clear()
     work.controller.abort(new Error('Fovea agent scope disposed'))
     background.delete(agent)
     await work.tail.catch(() => undefined)
@@ -277,7 +317,11 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
   ctx.effect(function* () {
     yield async () => {
       const active = [...background.values()]
-      for (const work of active) work.controller.abort(new Error('dsh-fovea disposed'))
+      for (const work of active) {
+        if (work.warmTimer !== undefined) clearTimeout(work.warmTimer)
+        work.warmFiles.clear()
+        work.controller.abort(new Error('dsh-fovea disposed'))
+      }
       background.clear()
       nextPrompt.clear()
       for (const agent of scopedAgents) clearDshFoveaAgentScope(agent)
