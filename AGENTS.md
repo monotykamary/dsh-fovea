@@ -16,9 +16,11 @@ re-install uses `pnpm run install:local`.
 dsh-fovea is a native DeepSeek Harness plugin that adapts the pi-fovea engine to
 the Harness execution world. The engine under `src/core/` is a port of
 pi-fovea and stays a pure function of repository content. `src/runtime.ts`,
-`src/node-runtime.ts`, and `src/dsh-runtime.ts` are the only places that
-touch filesystems or subprocesses, so Harness never bypasses its own execution
-world. `tests/isolation.test.ts` enforces that boundary.
+`src/node-runtime.ts`, `src/dsh-runtime.ts`, and `src/worktree.ts` (git
+worktree isolation, which reaches git only through a runtime's `run`) are
+the only places that touch filesystems or subprocesses, so Harness never
+bypasses its own execution world. `tests/isolation.test.ts` enforces that
+boundary.
 
 ## Cache invalidation
 

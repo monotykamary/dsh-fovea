@@ -40,6 +40,15 @@ export interface FoveaSpillRef {
   readonly retrievalHint: string
 }
 
+/** Lease for one isolated git worktree created through the runtime. */
+export interface WorktreeLease {
+  readonly gitRoot: string
+  readonly path: string
+  /** Effective child cwd inside the generated worktree. */
+  readonly cwd: string
+  readonly branch: string
+}
+
 /** One repository execution world bound to one calling agent. */
 export interface FoveaRuntime {
   readonly workspaceKey: string
@@ -54,6 +63,12 @@ export interface FoveaRuntime {
   listDir(path: string, signal?: AbortSignal): Promise<FoveaDirEntry[]>
   run(argv: readonly string[], options?: FoveaCommandOptions): Promise<FoveaCommandResult>
   createTempText(prefix: string, name: string, content: string): Promise<string | undefined>
+  /** Create an isolated git worktree outside the repository and return its lease. */
+  createWorktree(id: string, cwd: string, name: string, preserveSourceSubdirectory?: boolean): Promise<WorktreeLease>
+  /** Return the lease for a previously created worktree id. */
+  getWorktree(id: string): WorktreeLease | undefined
+  /** Remove the worktree (and optionally its branch). Returns false for an unknown id. */
+  removeWorktree(id: string, deleteBranch?: boolean): Promise<boolean>
   /** Read host-managed optimization/state data scoped to this workspace. */
   readCache(key: string, maxBytes?: number): Promise<string | undefined>
   /** Persist host-managed optimization/state data scoped to this workspace. */

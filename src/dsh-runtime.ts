@@ -1,7 +1,8 @@
 import type { Context } from '@monotykamary/cordis'
 import type { Agent } from '@monotykamary/dsh-agent'
 import type { CallId } from '@monotykamary/dsh-llm'
-import type { FoveaCommandOptions, FoveaCommandResult, FoveaDirEntry, FoveaPathInfo, FoveaRuntime, FoveaSpillRef } from './runtime.js'
+import type { FoveaCommandOptions, FoveaCommandResult, FoveaDirEntry, FoveaPathInfo, FoveaRuntime, FoveaSpillRef, WorktreeLease } from './runtime.js'
+import { WorktreeManager } from './worktree.js'
 import type {} from '@monotykamary/dsh-fs'
 import type {} from '@monotykamary/dsh-spill'
 import type {} from '@monotykamary/dsh-subprocess'
@@ -38,6 +39,7 @@ export class DshFoveaRuntime implements FoveaRuntime {
   readonly displayRoot: string
   readonly signal: AbortSignal
   private readonly executables = new Map<string, Promise<string>>()
+  private readonly worktrees = new WorktreeManager(this)
 
   private constructor(
     private readonly ctx: Context,
@@ -121,6 +123,15 @@ export class DshFoveaRuntime implements FoveaRuntime {
     ].join(';')
     const result = await this.run(['node', '-e', script, prefix, name], { stdin: content, timeoutMs: 15_000, maxBytes: 1024 * 1024 })
     return result.exitCode === 0 && !result.stdoutTruncated ? result.stdout.trim() || undefined : undefined
+  }
+  async createWorktree(id: string, cwd: string, name: string, preserveSourceSubdirectory = false): Promise<WorktreeLease> {
+    return this.worktrees.create(id, cwd, name, preserveSourceSubdirectory)
+  }
+  getWorktree(id: string): WorktreeLease | undefined {
+    return this.worktrees.get(id)
+  }
+  async removeWorktree(id: string, deleteBranch = false): Promise<boolean> {
+    return this.worktrees.cleanup(id, deleteBranch)
   }
   async readCache(key: string, maxBytes = MAX_CACHE_ENTRY_BYTES): Promise<string | undefined> {
     this.signal.throwIfAborted()

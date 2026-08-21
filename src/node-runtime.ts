@@ -4,7 +4,8 @@ import type { Stats } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat as fsStat, lstat as fsLstat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import type { FoveaCommandOptions, FoveaCommandResult, FoveaDirEntry, FoveaPathInfo, FoveaRuntime, FoveaSpillRef } from './runtime.js'
+import type { FoveaCommandOptions, FoveaCommandResult, FoveaDirEntry, FoveaPathInfo, FoveaRuntime, FoveaSpillRef, WorktreeLease } from './runtime.js'
+import { WorktreeManager } from './worktree.js'
 
 function versionOf(value: { dev: number | bigint; ino: number | bigint; size: number | bigint; mtimeMs: number | bigint }): string {
   return `${value.dev}:${value.ino}:${value.size}:${value.mtimeMs}`
@@ -27,6 +28,7 @@ export class NodeFoveaRuntime implements FoveaRuntime {
   readonly signal: AbortSignal
   private spillRoot: string | undefined
   private readonly cacheRoot: string
+  private readonly worktrees = new WorktreeManager(this)
 
   constructor(root: string, options: { scopeKey?: string; signal?: AbortSignal } = {}) {
     this.processRoot = resolve(root)
@@ -100,6 +102,15 @@ export class NodeFoveaRuntime implements FoveaRuntime {
     const path = join(directory, name)
     await writeFile(path, content, { mode: 0o600 })
     return path
+  }
+  async createWorktree(id: string, cwd: string, name: string, preserveSourceSubdirectory = false): Promise<WorktreeLease> {
+    return this.worktrees.create(id, cwd, name, preserveSourceSubdirectory)
+  }
+  getWorktree(id: string): WorktreeLease | undefined {
+    return this.worktrees.get(id)
+  }
+  async removeWorktree(id: string, deleteBranch = false): Promise<boolean> {
+    return this.worktrees.cleanup(id, deleteBranch)
   }
   private cachePath(key: string): string {
     return join(this.cacheRoot, createHash('sha256').update(key).digest('hex') + '.txt')

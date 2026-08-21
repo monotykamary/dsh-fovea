@@ -242,6 +242,7 @@ There is intentionally no browser client plugin: dsh-fovea contributes server/ru
 - Repository paths resolve from the calling agent's session `cwd` through `ctx.fs`.
 - Provider `FsTarget.targetKey` identifies shared graph/fact state; `ctx.fs.processPath(...)` crosses only into the matching subprocess provider.
 - Git and ast-grep run through `ctx.subprocess`, with bounded output, timeout, cancellation, and process-tree ownership.
+- Optional isolation: `runtime.createWorktree(id, cwd, name, preserveSourceSubdirectory?)` adds a git worktree outside the repository on a `dsh-fovea/<label>-<id>` branch and returns a lease (`gitRoot`, `path`, `cwd`, `branch`); `runtime.removeWorktree(id, deleteBranch?)` tears it down. The manager reaches git only through the same `ctx.subprocess` path, so leases behave identically for standalone Node and DSH provider runtimes.
 - DSH cache/provenance entries are bounded in-memory data: 32 MiB per entry and 128 MiB total. They do not survive a DSH process restart.
 - The standalone Node adapter uses private temporary-disk cache files instead.
 - Complete overflow lists use optional `ctx.spillStore` only for top-level tool calls that carry session/call ownership. Command and sync rendering stays bounded without creating unowned spills.
@@ -310,6 +311,24 @@ console.log(result.text)
 ```
 
 Implementations embedding the engine can provide their own `FoveaRuntime`; operations must always execute inside `withFoveaRuntime(...)`.
+
+### Worktree isolation
+
+The same seam exposes pi-fabric-style worktree isolation for embedding agent execution:
+
+```ts
+import { NodeFoveaRuntime } from 'dsh-fovea/core'
+
+const runtime = new NodeFoveaRuntime(process.cwd(), { scopeKey: 'isolated-agent' })
+const lease = await runtime.createWorktree('agent-1', runtime.processRoot, 'My Agent', true)
+try {
+  // agent runs with process.cwd() === lease.cwd (here: <worktree>/<source subdirectory>)
+} finally {
+  await runtime.removeWorktree('agent-1', true) // also deletes the dsh-fovea/<label> branch
+}
+```
+
+The `WorktreeManager` class (exported from `dsh-fovea/core`) is the direct port of pi-fabric's manager; the runtime methods are thin, per-runtime delegates.
 
 ## Development and verification
 
