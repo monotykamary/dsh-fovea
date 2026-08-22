@@ -323,22 +323,34 @@ describe('DSH plugin registration', () => {
 
   it('defers another top-level agent but treats subagent writes as current-lineage work', async () => {
     const steered: unknown[] = []
+    const session = (id: string, header: Record<string, unknown>) => {
+      const events: unknown[] = []
+      return {
+        id,
+        header,
+        events,
+        append(type: string, data: unknown) {
+          const event = { type, data, seq: ++seq, time: Date.now(), surfaceOp: 'append' }
+          events.push(event)
+          return event
+        },
+      }
+    }
     const subject = {
       id: 'agent-current',
-      session: { id: 'session-current', header: { cwd: root } },
+      session: session('session-current', { cwd: root }),
       steer(message: unknown) { steered.push(message) },
     } as never
     const other = {
       id: 'agent-other',
-      session: { id: 'session-other', header: { cwd: root } },
+      session: session('session-other', { cwd: root }),
       steer() {},
     } as never
     const child = {
       id: 'agent-child',
-      session: {
-        id: 'session-child',
-        header: { cwd: root, origin: 'subagent', parentSession: 'session-current', delegationDepth: 1 },
-      },
+      session: session('session-child', {
+        cwd: root, origin: 'subagent', parentSession: 'session-current', delegationDepth: 1,
+      }),
       steer() {},
     } as never
     const ctx = await mount({
@@ -352,7 +364,21 @@ describe('DSH plugin registration', () => {
         content: { type: 'string', required: true },
       },
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
-      execute: async args => { await writeFile(args.file_path, args.content); return 'written' },
+      execute: async (args, exec) => {
+        const prior = await readFile(args.file_path)
+        const next = Buffer.from(args.content)
+        await writeFile(args.file_path, next)
+        exec.recordFileMutation({
+          beforeSha1: createHash('sha1').update(prior).digest('hex'),
+          afterSha1: createHash('sha1').update(next).digest('hex'),
+          beforeSha256: createHash('sha256').update(prior).digest('hex'),
+          afterSha256: createHash('sha256').update(next).digest('hex'),
+          path: 'src/users.ts',
+          operation: 'modify',
+          diffs: [{ oldText: prior.toString('utf8'), newText: args.content }],
+        })
+        return 'written'
+      }
     }))
     const events = agentEvents(ctx, subject)
     const signal = new AbortController().signal
@@ -367,10 +393,13 @@ describe('DSH plugin registration', () => {
     expect(focused.isError).toBe(false)
 
     const file = join(root, 'src', 'users.ts')
+    let observedMutations: unknown[] | undefined
+    ctx.on('tools/result', (_exec, result) => { observedMutations = result.mutations })
     await call(ctx, 'write', {
       file_path: file,
       content: 'export function upstreamRoute() { return "/upstream" }\napp.get("/upstream", upstreamRoute)\n',
     }, other)
+    expect(observedMutations).toHaveLength(1)
     await events.serial('agent/turn-stopping', { turn: 2, signal })
     expect(steered).toHaveLength(0)
 

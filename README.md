@@ -196,7 +196,7 @@ Invalid integer environment values fall back to the listed default.
 The lifecycle integration is active unless `sync.mode` is `disabled`:
 
 1. `agent/session-start` begins indexing asynchronously and establishes a quiet content-hash baseline.
-2. Any tool result carrying versioned Harness file-mutation receipts contributes its exact SHA-1 transitions, including third-party and nested mutators; legacy `write` or `edit` tools with a string `file_path` retain best-effort before/after interception.
+2. Any tool result carrying versioned Harness file-mutation receipts contributes its exact SHA-1 transitions, including third-party and nested mutators. Receipt batches require one bounded journal update and no extra file reads.
 3. `tools/result` debounces and coalesces mutation paths into background graph refresh and impact preparation.
 4. `agent/pre-step` performs a deferred drift check and appends model context only when a prepared red verdict exists.
 5. `agent/turn-stopping` schedules the full correctness check and returns immediately, so repository indexing never delays `turn/end` or the idle status transition. A later red verdict calls `agent.steer(...)`; cancellation or Agent disposal aborts undelivered work.

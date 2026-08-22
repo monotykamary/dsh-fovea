@@ -2,13 +2,14 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   attributeChanges,
   captureMutation,
   finishMutation,
   provenancePathFor,
   recordMutationTransition,
+  recordMutationTransitions,
 } from "../src/core/provenance.js";
 import { inNodeRuntime } from "./helpers/runtime.js";
 
@@ -68,6 +69,28 @@ describe("sync provenance", () => {
     await expect(attribute(root, "session-a", [{
       file: "file.ts", beforeSha: hash("one\n"), afterSha: hash("two\n"),
     }])).resolves.toEqual({ kind: "current-session", files: { "file.ts": "current-session" } });
+  });
+
+  it("persists one multi-file receipt batch with one cache read and write", async () => {
+    const { root } = rootWithFile();
+    writeFileSync(join(root, "other.ts"), "alpha\n");
+    await inNodeRuntime(root, async (processRoot, runtime) => {
+      const readCache = vi.spyOn(runtime, "readCache");
+      const writeCache = vi.spyOn(runtime, "writeCache");
+      await expect(recordMutationTransitions(processRoot, [
+        { path: "file.ts", beforeSha: hash("one\n"), afterSha: hash("two\n") },
+        { path: "other.ts", beforeSha: hash("alpha\n"), afterSha: hash("beta\n") },
+      ], "session-a", "receipt-batch")).resolves.toBe(2);
+      expect(readCache).toHaveBeenCalledTimes(1);
+      expect(writeCache).toHaveBeenCalledTimes(1);
+    });
+    await expect(attribute(root, "session-a", [
+      { file: "file.ts", beforeSha: hash("one\n"), afterSha: hash("two\n") },
+      { file: "other.ts", beforeSha: hash("alpha\n"), afterSha: hash("beta\n") },
+    ])).resolves.toEqual({
+      kind: "current-session",
+      files: { "file.ts": "current-session", "other.ts": "current-session" },
+    });
   });
 
   it("reports a transition chain owned by multiple sessions as mixed", async () => {

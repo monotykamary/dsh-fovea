@@ -4,7 +4,7 @@ import { createUserMessage } from '@monotykamary/dsh-llm'
 import type { ToolExecutionResult } from '@monotykamary/dsh-tools'
 import { clearDshFoveaAgentScope, DshFoveaRuntime, setDshFoveaAgentScope } from './dsh-runtime.js'
 import { ensureState } from './core/state.js'
-import { captureMutation, finishMutation, recordMutationTransition, type MutationCapture } from './core/provenance.js'
+import { recordMutationTransitions } from './core/provenance.js'
 import { sync, warmSync, type SyncOutcome } from './core/sync.js'
 import { getSession, observeSessionPaths } from './core/session.js'
 import type { ResolvedConfig } from './core/config.js'
@@ -45,7 +45,6 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
   if (config.sync.mode === 'disabled') return
 
   const background = new Map<Agent, BackgroundWork>()
-  const legacyCaptures = new WeakMap<object, MutationCapture>()
   const nextPrompt = new Map<Agent, string[]>()
   const lineageBySession = new Map<string, string>()
   const lineageMembers = new Map<string, Set<string>>()
@@ -174,14 +173,11 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     }))
   })
 
-  // Built-in write/edit calls retain a before-image fallback for older Harness
-  // runtimes. Final tools/result observers choose receipts over that fallback.
   ctx.on('tools/execute', async (exec, next): Promise<ToolExecutionResult> => {
     const agent = exec.agent
-    const path = mutationPath(exec.name, exec.arguments)
     const observed = attentionPath(exec.arguments)
     const discloses = exec.name.startsWith('fovea_')
-    if (agent === undefined || (!discloses && path === undefined && observed === undefined)) return next()
+    if (agent === undefined || (!discloses && observed === undefined)) return next()
     lineageFor(agent)
     let runtime: DshFoveaRuntime
     try {
@@ -193,12 +189,7 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
       if (observed !== undefined) {
         rememberAttention(agent, await observeSessionPaths(runtime.processRoot, [observed]))
       }
-      let capture: MutationCapture | undefined
-      if (path !== undefined) {
-        try { capture = await captureMutation(runtime.processRoot, path) } catch { /* attribution is best-effort */ }
-      }
       const result = await next()
-      if (!result.isError && capture !== undefined) legacyCaptures.set(exec, capture)
       if (!result.isError) rememberAttention(agent, getSession(runtime.processRoot).syncScopes)
       return result
     })
@@ -206,23 +197,20 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
 
   ctx.on('tools/result', (exec, result) => {
     const agent = exec.agent
-    if (agent === undefined) return
-    const capture = legacyCaptures.get(exec)
-    legacyCaptures.delete(exec)
     const mutations = result.mutations ?? []
-    if (mutations.length === 0 && (result.isError || capture === undefined)) return
+    if (agent === undefined || mutations.length === 0) return
     enqueue(agent, signal => runForAgent(agent, signal, async (root) => {
-      if (mutations.length > 0) {
-        for (const mutation of mutations) {
-          await recordMutationTransition(
-            root, mutation.path, mutation.beforeSha1 ?? undefined, mutation.afterSha1 ?? undefined,
-            lineageFor(agent), String(exec.callId),
-          )
-        }
-        rememberAttention(agent, await observeSessionPaths(root, mutations.map(mutation => mutation.path)))
-      } else if (capture !== undefined) {
-        await finishMutation(capture, lineageFor(agent), String(exec.callId))
-      }
+      await recordMutationTransitions(
+        root,
+        mutations.map(mutation => ({
+          path: mutation.path,
+          beforeSha: mutation.beforeSha1 ?? undefined,
+          afterSha: mutation.afterSha1 ?? undefined,
+        })),
+        lineageFor(agent),
+        String(exec.callId),
+      )
+      rememberAttention(agent, await observeSessionPaths(root, mutations.map(mutation => mutation.path)))
     }))
   })
 
