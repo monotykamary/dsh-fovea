@@ -206,6 +206,7 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
           path: mutation.path,
           beforeSha: mutation.beforeSha1 ?? undefined,
           afterSha: mutation.afterSha1 ?? undefined,
+          commitOrder: mutation.commitOrder,
         })),
         lineageFor(agent),
         String(exec.callId),

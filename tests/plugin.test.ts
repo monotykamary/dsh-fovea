@@ -471,6 +471,10 @@ describe('DSH plugin registration', () => {
     }]))
     await expect.poll(async () => (await readAttribution()).kind).toBe('current-session')
     expect(await readAttribution()).toEqual({ kind: 'current-session', files: { 'src/users.ts': 'current-session' } })
+    const journal = JSON.parse((await runtime.readCache(
+      provenancePathFor(runtime.processRoot, 'session-fovea-test'), 16 * 1024 * 1024,
+    ))!) as { records: Array<{ commitOrder?: number }> }
+    expect(journal.records).toEqual([expect.objectContaining({ commitOrder: 0 })])
     await withFoveaRuntime(runtime, () => runtime.deleteCache(provenancePathFor(root, 'session-fovea-test'))) 
     await ctx.fiber.dispose()
   })
