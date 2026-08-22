@@ -4,7 +4,7 @@ import { createUserMessage } from '@monotykamary/dsh-llm'
 import type { ToolExecutionResult } from '@monotykamary/dsh-tools'
 import { clearDshFoveaAgentScope, DshFoveaRuntime, setDshFoveaAgentScope } from './dsh-runtime.js'
 import { ensureState } from './core/state.js'
-import { captureMutation, finishMutation, type MutationCapture } from './core/provenance.js'
+import { captureMutation, finishMutation, recordMutationTransition, type MutationCapture } from './core/provenance.js'
 import { sync, warmSync, type SyncOutcome } from './core/sync.js'
 import { getSession, observeSessionPaths } from './core/session.js'
 import type { ResolvedConfig } from './core/config.js'
@@ -45,6 +45,7 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
   if (config.sync.mode === 'disabled') return
 
   const background = new Map<Agent, BackgroundWork>()
+  const legacyCaptures = new WeakMap<object, MutationCapture>()
   const nextPrompt = new Map<Agent, string[]>()
   const lineageBySession = new Map<string, string>()
   const lineageMembers = new Map<string, Set<string>>()
@@ -173,8 +174,8 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     }))
   })
 
-  // Attribute built-in write/edit calls without replacing or reimplementing the
-  // tools. The wrapper is best-effort and always delegates exactly once.
+  // Built-in write/edit calls retain a before-image fallback for older Harness
+  // runtimes. Final tools/result observers choose receipts over that fallback.
   ctx.on('tools/execute', async (exec, next): Promise<ToolExecutionResult> => {
     const agent = exec.agent
     const path = mutationPath(exec.name, exec.arguments)
@@ -197,17 +198,32 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
         try { capture = await captureMutation(runtime.processRoot, path) } catch { /* attribution is best-effort */ }
       }
       const result = await next()
-      if (!result.isError) {
-        // Fovea tools enroll the files they actually reveal; native path tools
-        // enroll their argument before delegation. Both roll up to the top-level
-        // agent so delegated subagents expand one shared attention envelope.
-        rememberAttention(agent, getSession(runtime.processRoot).syncScopes)
-        if (capture !== undefined) {
-          try { await finishMutation(capture, lineageFor(agent), String(exec.callId)) } catch { /* best-effort */ }
-        }
-      }
+      if (!result.isError && capture !== undefined) legacyCaptures.set(exec, capture)
+      if (!result.isError) rememberAttention(agent, getSession(runtime.processRoot).syncScopes)
       return result
     })
+  })
+
+  ctx.on('tools/result', (exec, result) => {
+    const agent = exec.agent
+    if (agent === undefined) return
+    const capture = legacyCaptures.get(exec)
+    legacyCaptures.delete(exec)
+    const mutations = result.mutations ?? []
+    if (mutations.length === 0 && (result.isError || capture === undefined)) return
+    enqueue(agent, signal => runForAgent(agent, signal, async (root) => {
+      if (mutations.length > 0) {
+        for (const mutation of mutations) {
+          await recordMutationTransition(
+            root, mutation.path, mutation.beforeSha1 ?? undefined, mutation.afterSha1 ?? undefined,
+            lineageFor(agent), String(exec.callId),
+          )
+        }
+        rememberAttention(agent, await observeSessionPaths(root, mutations.map(mutation => mutation.path)))
+      } else if (capture !== undefined) {
+        await finishMutation(capture, lineageFor(agent), String(exec.callId))
+      }
+    }))
   })
 
   // Successful mutations debounce and coalesce one background preparation while
@@ -216,9 +232,12 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
   if (config.sync.warmMutations) {
     ctx.on('tools/result', (exec, result) => {
       const agent = exec.agent
-      const path = mutationPath(exec.name, exec.arguments)
-      if (agent === undefined || path === undefined || result.isError) return
-      scheduleWarm(agent, path)
+      if (agent === undefined) return
+      const receiptPaths = result.mutations?.map(mutation => mutation.path) ?? []
+      const fallbackPath = !result.isError ? mutationPath(exec.name, exec.arguments) : undefined
+      for (const path of receiptPaths.length > 0 ? receiptPaths : fallbackPath === undefined ? [] : [fallbackPath]) {
+        scheduleWarm(agent, path)
+      }
     })
   }
 

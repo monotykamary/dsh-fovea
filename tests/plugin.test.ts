@@ -62,6 +62,7 @@ const agent = () => ({
   session: {
     id: 'session-fovea-test',
     header: { cwd: root },
+    events: [],
     append: (type: string, data: unknown) => ({ type, data, seq: ++seq, at: Date.now() }),
   },
 }) as never
@@ -407,29 +408,40 @@ describe('DSH plugin registration', () => {
     await ctx.fiber.dispose()
   }, 30_000)
 
-  it('attributes successful write tools without replacing them', async () => {
+  it('attributes arbitrary mutators from durable receipt transitions', async () => {
     const ctx = await mount({ sync: { mode: 'enabled', warmMutations: false } })
     ctx.tools.register(defineTool({
-      name: 'write',
-      description: 'Synthetic mutation for adapter verification',
-      parameters: {
-        file_path: { type: 'string', required: true },
-        content: { type: 'string', required: true },
-      },
+      name: 'custom_mutator',
+      description: 'Synthetic receipt producer for adapter verification',
+      parameters: { path: { type: 'string', required: true }, content: { type: 'string', required: true } },
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
-      execute: async args => { await writeFile(args.file_path, args.content); return 'written' },
+      execute: async (args, exec) => {
+        const prior = await readFile(args.path)
+        const next = Buffer.from(args.content)
+        await writeFile(args.path, next)
+        exec.recordFileMutation({
+          beforeSha1: createHash('sha1').update(prior).digest('hex'),
+          afterSha1: createHash('sha1').update(next).digest('hex'),
+          beforeSha256: createHash('sha256').update(prior).digest('hex'),
+          afterSha256: createHash('sha256').update(next).digest('hex'),
+          path: 'src/users.ts', operation: 'modify',
+          diffs: [{ oldText: prior.toString('utf8'), newText: args.content }],
+        })
+        return 'written'
+      },
     }))
     const file = join(root, 'src', 'users.ts')
     const before = createHash('sha1').update(await readFile(file)).digest('hex')
     const since = Date.now() - 1_000
-    const result = await call(ctx, 'write', { file_path: file, content: 'export const changed = true\n' })
+    const result = await call(ctx, 'custom_mutator', { path: file, content: 'export const changed = true\n' })
     expect(result.isError).toBe(false)
     const after = createHash('sha1').update(await readFile(file)).digest('hex')
     const runtime = await DshFoveaRuntime.create(ctx, agent(), new AbortController().signal)
-    const attribution = await withFoveaRuntime(runtime, () => attributeChanges(root, 'session-fovea-test', since, [{
+    const readAttribution = () => withFoveaRuntime(runtime, () => attributeChanges(root, 'session-fovea-test', since, [{
       file: 'src/users.ts', beforeSha: before, afterSha: after,
     }]))
-    expect(attribution).toEqual({ kind: 'current-session', files: { 'src/users.ts': 'current-session' } })
+    await expect.poll(async () => (await readAttribution()).kind).toBe('current-session')
+    expect(await readAttribution()).toEqual({ kind: 'current-session', files: { 'src/users.ts': 'current-session' } })
     await withFoveaRuntime(runtime, () => runtime.deleteCache(provenancePathFor(root, 'session-fovea-test'))) 
     await ctx.fiber.dispose()
   })

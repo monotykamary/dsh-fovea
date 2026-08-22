@@ -84,25 +84,29 @@ const persistRecord = async (target: string, root: string, record: MutationRecor
   } satisfies MutationJournal));
 };
 
-export const finishMutation = async (
-  capture: MutationCapture,
+export const recordMutationTransition = async (
+  root: string,
+  path: string,
+  beforeSha: string | undefined,
+  afterSha: string | undefined,
   sessionId: string,
   toolCallId: string,
 ): Promise<boolean> => {
-  const afterSha = await hashFile(capture.absolutePath);
-  if (capture.beforeSha === afterSha) return false;
+  const located = repoPath(root, path);
+  if (!located || beforeSha === afterSha) return false;
+  const resolvedRoot = executionPathResolve(root);
   const owner = ownerFor(sessionId);
-  const target = provenancePathFor(capture.root, sessionId);
+  const target = provenancePathFor(resolvedRoot, sessionId);
   const record: MutationRecord = {
-    file: capture.file,
-    ...(capture.beforeSha === undefined ? {} : { beforeSha: capture.beforeSha }),
+    file: located.file,
+    ...(beforeSha === undefined ? {} : { beforeSha }),
     ...(afterSha === undefined ? {} : { afterSha }),
     owner,
     toolCallId,
     at: Date.now(),
   };
   const previous = writeQueues.get(target) ?? Promise.resolve();
-  const queued = previous.catch(() => {}).then(() => persistRecord(target, capture.root, record));
+  const queued = previous.catch(() => {}).then(() => persistRecord(target, resolvedRoot, record));
   writeQueues.set(target, queued);
   try {
     await queued;
@@ -111,6 +115,14 @@ export const finishMutation = async (
     if (writeQueues.get(target) === queued) writeQueues.delete(target);
   }
 };
+
+export const finishMutation = async (
+  capture: MutationCapture,
+  sessionId: string,
+  toolCallId: string,
+): Promise<boolean> => recordMutationTransition(
+  capture.root, capture.file, capture.beforeSha, await hashFile(capture.absolutePath), sessionId, toolCallId,
+);
 
 const readRecords = async (root: string, since: number): Promise<MutationRecord[]> => {
   const target = keyFor(root);

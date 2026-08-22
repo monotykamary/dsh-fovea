@@ -8,6 +8,7 @@ import {
   captureMutation,
   finishMutation,
   provenancePathFor,
+  recordMutationTransition,
 } from "../src/core/provenance.js";
 import { inNodeRuntime } from "./helpers/runtime.js";
 
@@ -57,6 +58,16 @@ describe("sync provenance", () => {
       kind: "other-session",
       files: { "file.ts": "other-session" },
     });
+  });
+
+  it("attributes an explicit trusted hash transition", async () => {
+    const { root, file } = rootWithFile();
+    await expect(inNodeRuntime(root, (processRoot) => recordMutationTransition(
+      processRoot, file, hash("one\n"), hash("two\n"), "session-a", "receipt-a",
+    ))).resolves.toBe(true);
+    await expect(attribute(root, "session-a", [{
+      file: "file.ts", beforeSha: hash("one\n"), afterSha: hash("two\n"),
+    }])).resolves.toEqual({ kind: "current-session", files: { "file.ts": "current-session" } });
   });
 
   it("reports a transition chain owned by multiple sessions as mixed", async () => {

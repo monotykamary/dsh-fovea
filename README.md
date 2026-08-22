@@ -196,7 +196,7 @@ Invalid integer environment values fall back to the listed default.
 The lifecycle integration is active unless `sync.mode` is `disabled`:
 
 1. `agent/session-start` begins indexing asynchronously and establishes a quiet content-hash baseline.
-2. Successful tools named `write` or `edit` with a string `file_path` receive best-effort before/after hash attribution without replacing those tools.
+2. Any tool result carrying versioned Harness file-mutation receipts contributes its exact SHA-1 transitions, including third-party and nested mutators; legacy `write` or `edit` tools with a string `file_path` retain best-effort before/after interception.
 3. `tools/result` debounces and coalesces mutation paths into background graph refresh and impact preparation.
 4. `agent/pre-step` performs a deferred drift check and appends model context only when a prepared red verdict exists.
 5. `agent/turn-stopping` schedules the full correctness check and returns immediately, so repository indexing never delays `turn/end` or the idle status transition. A later red verdict calls `agent.steer(...)`; cancellation or Agent disposal aborts undelivered work.
@@ -205,7 +205,7 @@ The lifecycle integration is active unless `sync.mode` is `disabled`:
 
 With the default `sync.scope: session`, path-bearing read/search/edit tools, explicit focus/dwell results, and file-seeded impact calls add the top-level logical directory (or exact root file) of every path they touch to that conversation's attention. Fovea still indexes and baselines the whole root; drift solely in sibling directories is absorbed silently into the next baseline instead of becoming model context, so broad umbrella coverage does not become broad model context. Set `sync.scope` to `repository` to restore root-wide steering. A meaningful current, mixed, or unattributed change inside the attention scope still steers after the turn-stop check completes; a change attributed solely to another agent session is queued for the next user prompt instead and never restarts an idle agent.
 
-Shell side effects, external editors, and other mutation paths remain `unattributed`. Provenance distinguishes current-session, other-session, mixed, and unattributed transitions when exact hash chains permit it. Current DSH provenance is process-memory scoped, bounded to 2,048 records, and pruned after seven days.
+Shell side effects, external editors, and mutation paths without receipts remain `unattributed`. Provenance distinguishes current-session, other-session, mixed, and unattributed transitions when exact hash chains permit it. Current DSH provenance is process-memory scoped, bounded to 2,048 records, and pruned after seven days.
 
 All injected context uses DSH message sources under plugin `dsh-fovea`, so Harness owns transcript durability and presentation.
 
