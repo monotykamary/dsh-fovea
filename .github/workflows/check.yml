@@ -5,6 +5,9 @@ on:
   pull_request:
 permissions:
   contents: read
+env:
+  # Development overrides link Harness packages through a sibling checkout.
+  DSH_HARNESS_REF: 6fbdc58a1ff33c01d3f24328eeb650c76645c87a
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -17,5 +20,18 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Checkout DeepSeek Harness
+        run: |
+          git init --quiet ../deepseek-harness
+          git -C ../deepseek-harness remote add origin https://github.com/monotykamary/deepseek-harness.git
+          git -C ../deepseek-harness fetch --depth 1 --quiet origin "$DSH_HARNESS_REF"
+          git -C ../deepseek-harness checkout --quiet --detach FETCH_HEAD
+          git -C ../deepseek-harness log -1 --oneline
+      - name: Install Harness workspace
+        working-directory: ../deepseek-harness
+        run: pnpm install --frozen-lockfile
+      - name: Build Harness library faces
+        working-directory: ../deepseek-harness
+        run: pnpm run build:lib:host && pnpm run build:lib:client
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
