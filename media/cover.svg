@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="360" viewBox="0 0 1100 360" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1100" height="360" viewBox="0 0 1100 360" role="img" aria-labelledby="title desc">
   <title id="title">dsh-fovea repository graph</title>
-  <desc id="desc">A DeepSeek-blue code graph with a sharp luminous center, concentric focus rings, and dim peripheral nodes.</desc>
+  <desc id="desc">A DeepSeek-blue code graph revealed by an ink bloom: pulses of light flow inward along curved edges, focus rings ripple and rotate, and dim peripheral nodes twinkle.</desc>
   <defs>
     <radialGradient id="fovea" cx="50%" cy="50%" r="52%">
       <stop offset="0%" stop-color="#dce7ff" stop-opacity="0.98"/>
@@ -19,52 +19,144 @@
       <stop offset="0.5" stop-color="#4d6bfe" stop-opacity="0.45"/>
       <stop offset="1" stop-color="#4d6bfe" stop-opacity="0"/>
     </linearGradient>
+    <filter id="ink" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="23" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="90" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
     <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
       <feGaussianBlur stdDeviation="5" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <mask id="reveal">
+      <rect width="1100" height="360" fill="black"/>
+      <circle cx="550" cy="180" r="0" fill="white" filter="url(#ink)">
+        <animate attributeName="r" values="0;0;720" keyTimes="0;0.0909;1" dur="11s" fill="freeze" calcMode="spline" keySplines="0 0 1 1; 0.22 0.61 0.36 1"/>
+      </circle>
+    </mask>
   </defs>
   <rect width="1100" height="360" rx="18" fill="#080b16"/>
-  <path d="M70 180 H1030" stroke="url(#horizon)" stroke-width="1" stroke-dasharray="2 10"/>
-  <g opacity="0.72" stroke="url(#edge)" fill="none">
-    <path d="M54 282 C250 264 386 215 550 180"/>
-    <path d="M116 78 C290 100 410 142 550 180"/>
-    <path d="M250 326 C365 280 444 228 550 180" stroke-width="1.3"/>
-    <path d="M318 40 C412 94 469 135 550 180"/>
-    <path d="M410 312 C462 260 505 216 550 180"/>
-    <path d="M550 180 C646 125 720 82 790 54"/>
-    <path d="M550 180 C670 218 758 274 848 320" stroke-width="1.3"/>
-    <path d="M550 180 C724 164 860 126 1016 98"/>
-    <path d="M550 180 C742 208 888 248 1040 286"/>
-    <path d="M550 180 C610 239 656 289 704 334"/>
-    <path d="M116 78 C192 151 245 216 250 326" stroke-opacity="0.26"/>
-    <path d="M790 54 C868 116 930 201 1040 286" stroke-opacity="0.26"/>
-  </g>
-  <circle cx="550" cy="180" r="166" fill="url(#fovea)"/>
-  <g fill="#38425c" stroke="#66718f" stroke-width="0.7">
-    <circle cx="54" cy="282" r="4.5"/><circle cx="116" cy="78" r="4"/>
-    <circle cx="250" cy="326" r="4.5"/><circle cx="318" cy="40" r="4"/>
-    <circle cx="410" cy="312" r="4"/><circle cx="790" cy="54" r="4"/>
-    <circle cx="848" cy="320" r="4.5"/><circle cx="1016" cy="98" r="4"/>
-    <circle cx="1040" cy="286" r="4"/><circle cx="704" cy="334" r="4"/>
-  </g>
-  <g fill="#83b4ff" filter="url(#glow)">
-    <circle cx="550" cy="180" r="7"/>
-    <circle cx="508" cy="148" r="4"/><circle cx="593" cy="152" r="4"/>
-    <circle cx="611" cy="201" r="4.5"/><circle cx="493" cy="207" r="4"/>
-    <circle cx="555" cy="119" r="3.7"/><circle cx="532" cy="234" r="3.5"/>
-  </g>
-  <g fill="none" stroke="#83b4ff">
-    <circle cx="550" cy="180" r="28" stroke-width="2.2" stroke-opacity="0.95"/>
-    <circle cx="550" cy="180" r="58" stroke-width="1.5" stroke-opacity="0.58"/>
-    <circle cx="550" cy="180" r="94" stroke-width="1.1" stroke-opacity="0.30" stroke-dasharray="3 7"/>
-    <circle cx="550" cy="180" r="134" stroke-width="1" stroke-opacity="0.16" stroke-dasharray="2 9"/>
-  </g>
-  <path d="M550 104 L616 142 L616 218 L550 256 L484 218 L484 142 Z" fill="none" stroke="#4d6bfe" stroke-width="1.2" stroke-opacity="0.35"/>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" letter-spacing="1.4" fill="#91a7e8">
-    <text x="86" y="310" opacity="0.48">FILES</text>
-    <text x="134" y="66" opacity="0.48">SYMBOLS</text>
-    <text x="916" y="88" opacity="0.48">ROUTES</text>
-    <text x="887" y="313" opacity="0.48">IMPACT</text>
+  <path d="M70 180 H1030" stroke="url(#horizon)" stroke-width="1" stroke-dasharray="2 10">
+    <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="3.5s" repeatCount="indefinite"/>
+  </path>
+  <g mask="url(#reveal)">
+    <path d="M550 180 L791.1 82.6 A 260 260 0 0 1 791.1 277.4 Z" fill="#bcd2ff" opacity="0.05">
+      <animateTransform attributeName="transform" type="rotate" from="0 550 180" to="360 550 180" dur="30s" repeatCount="indefinite"/>
+    </path>
+    <g opacity="0.72" stroke="url(#edge)" fill="none">
+      <path id="p1" d="M54 282 C250 264 386 215 550 180"/>
+      <path id="p2" d="M116 78 C290 100 410 142 550 180"/>
+      <path id="p3" d="M250 326 C365 280 444 228 550 180" stroke-width="1.3"/>
+      <path id="p4" d="M318 40 C412 94 469 135 550 180"/>
+      <path id="p5" d="M410 312 C462 260 505 216 550 180"/>
+      <path id="p6" d="M550 180 C646 125 720 82 790 54"/>
+      <path id="p7" d="M550 180 C670 218 758 274 848 320" stroke-width="1.3"/>
+      <path id="p8" d="M550 180 C724 164 860 126 1016 98"/>
+      <path id="p9" d="M550 180 C742 208 888 248 1040 286"/>
+      <path id="p10" d="M550 180 C610 239 656 289 704 334"/>
+      <path d="M116 78 C192 151 245 216 250 326" stroke-opacity="0.26"/>
+      <path d="M790 54 C868 116 930 201 1040 286" stroke-opacity="0.26"/>
+    </g>
+    <circle cx="550" cy="180" r="166" fill="url(#fovea)"/>
+    <circle cx="550" cy="180" r="166" fill="url(#fovea)" opacity="0.2">
+      <animate attributeName="opacity" values="0.2;0.55;0.2" dur="7s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1; 0.4 0 0.6 1"/>
+    </circle>
+    <g fill="none" stroke="#83b4ff">
+      <circle cx="550" cy="180" r="28" stroke-width="1.6" opacity="0">
+        <animate attributeName="r" values="28;166" dur="5.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.6;0" dur="5.6s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="550" cy="180" r="28" stroke-width="1.2" opacity="0">
+        <animate attributeName="r" values="28;166" dur="5.6s" begin="-2.8s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.45;0" dur="5.6s" begin="-2.8s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <g fill="#dce7ff" filter="url(#glow)">
+      <circle r="3">
+        <animateMotion dur="6.2s" begin="-1s" repeatCount="indefinite"><mpath xlink:href="#p1"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="6.2s" begin="-1s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.6">
+        <animateMotion dur="7.6s" begin="-3.4s" repeatCount="indefinite"><mpath xlink:href="#p2"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="7.6s" begin="-3.4s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="3">
+        <animateMotion dur="5.4s" begin="-2.1s" repeatCount="indefinite"><mpath xlink:href="#p3"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="5.4s" begin="-2.1s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.4">
+        <animateMotion dur="8.4s" begin="-5.8s" repeatCount="indefinite"><mpath xlink:href="#p4"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="8.4s" begin="-5.8s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.8">
+        <animateMotion dur="5.8s" begin="-0.5s" repeatCount="indefinite"><mpath xlink:href="#p5"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="5.8s" begin="-0.5s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.6">
+        <animateMotion dur="6.6s" begin="-2.9s" repeatCount="indefinite" calcMode="linear" keyPoints="1;0" keyTimes="0;1"><mpath xlink:href="#p6"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="6.6s" begin="-2.9s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="3">
+        <animateMotion dur="5.2s" begin="-4.2s" repeatCount="indefinite" calcMode="linear" keyPoints="1;0" keyTimes="0;1"><mpath xlink:href="#p7"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="5.2s" begin="-4.2s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.4">
+        <animateMotion dur="7.2s" begin="-1.7s" repeatCount="indefinite" calcMode="linear" keyPoints="1;0" keyTimes="0;1"><mpath xlink:href="#p8"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="7.2s" begin="-1.7s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.6">
+        <animateMotion dur="8.8s" begin="-6.1s" repeatCount="indefinite" calcMode="linear" keyPoints="1;0" keyTimes="0;1"><mpath xlink:href="#p9"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="8.8s" begin="-6.1s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="2.8">
+        <animateMotion dur="6s" begin="-3s" repeatCount="indefinite" calcMode="linear" keyPoints="1;0" keyTimes="0;1"><mpath xlink:href="#p10"/></animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="6s" begin="-3s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <g fill="#38425c" stroke="#66718f" stroke-width="0.7">
+      <circle cx="54" cy="282" r="4.5"><animate attributeName="opacity" values="0.5;1;0.5" dur="6.4s" begin="-1.6s" repeatCount="indefinite"/></circle>
+      <circle cx="116" cy="78" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="7.9s" begin="-3.3s" repeatCount="indefinite"/></circle>
+      <circle cx="250" cy="326" r="4.5"><animate attributeName="opacity" values="0.5;1;0.5" dur="5.7s" begin="-0.9s" repeatCount="indefinite"/></circle>
+      <circle cx="318" cy="40" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="8.8s" begin="-4.7s" repeatCount="indefinite"/></circle>
+      <circle cx="410" cy="312" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="6.1s" begin="-2.4s" repeatCount="indefinite"/></circle>
+      <circle cx="790" cy="54" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="7.1s" begin="-5.2s" repeatCount="indefinite"/></circle>
+      <circle cx="848" cy="320" r="4.5"><animate attributeName="opacity" values="0.5;1;0.5" dur="5.5s" begin="-1.2s" repeatCount="indefinite"/></circle>
+      <circle cx="1016" cy="98" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="8.2s" begin="-3.8s" repeatCount="indefinite"/></circle>
+      <circle cx="1040" cy="286" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="6.9s" begin="-0.3s" repeatCount="indefinite"/></circle>
+      <circle cx="704" cy="334" r="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="7.5s" begin="-2.9s" repeatCount="indefinite"/></circle>
+    </g>
+    <g fill="#83b4ff" filter="url(#glow)">
+      <circle cx="550" cy="180" r="7">
+        <animate attributeName="r" values="7;8.4;7" dur="4.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1; 0.4 0 0.6 1"/>
+      </circle>
+      <circle cx="508" cy="148" r="4"><animate attributeName="opacity" values="0.75;1;0.75" dur="4.8s" begin="-1.4s" repeatCount="indefinite"/></circle>
+      <circle cx="593" cy="152" r="4"><animate attributeName="opacity" values="0.75;1;0.75" dur="5.4s" begin="-2.9s" repeatCount="indefinite"/></circle>
+      <circle cx="611" cy="201" r="4.5"><animate attributeName="opacity" values="0.75;1;0.75" dur="4.4s" begin="-0.8s" repeatCount="indefinite"/></circle>
+      <circle cx="493" cy="207" r="4"><animate attributeName="opacity" values="0.75;1;0.75" dur="5.8s" begin="-3.6s" repeatCount="indefinite"/></circle>
+      <circle cx="555" cy="119" r="3.7"><animate attributeName="opacity" values="0.75;1;0.75" dur="5s" begin="-2.1s" repeatCount="indefinite"/></circle>
+      <circle cx="532" cy="234" r="3.5"><animate attributeName="opacity" values="0.75;1;0.75" dur="5.3s" begin="-1.7s" repeatCount="indefinite"/></circle>
+    </g>
+    <g fill="none" stroke="#83b4ff">
+      <circle cx="550" cy="180" r="28" stroke-width="2.2" stroke-opacity="0.95"/>
+      <circle cx="550" cy="180" r="58" stroke-width="1.5" stroke-opacity="0.58"/>
+    </g>
+    <g fill="none" stroke="#83b4ff" stroke-opacity="0.3">
+      <circle cx="550" cy="180" r="94" stroke-width="1.1" stroke-dasharray="3 7">
+        <animateTransform attributeName="transform" type="rotate" from="0 550 180" to="360 550 180" dur="75s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <g fill="none" stroke="#83b4ff" stroke-opacity="0.16">
+      <circle cx="550" cy="180" r="134" stroke-width="1" stroke-dasharray="2 9">
+        <animateTransform attributeName="transform" type="rotate" from="360 550 180" to="0 550 180" dur="115s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <path d="M550 104 L616 142 L616 218 L550 256 L484 218 L484 142 Z" fill="none" stroke="#4d6bfe" stroke-width="1.2" stroke-opacity="0.35">
+      <animateTransform attributeName="transform" type="rotate" from="0 550 180" to="360 550 180" dur="160s" repeatCount="indefinite"/>
+    </path>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" letter-spacing="1.4" fill="#91a7e8">
+      <text x="86" y="310" opacity="0.48">FILES<animate attributeName="opacity" values="0.3;0.62;0.3" dur="7s" begin="-1s" repeatCount="indefinite"/></text>
+      <text x="134" y="66" opacity="0.48">SYMBOLS<animate attributeName="opacity" values="0.3;0.62;0.3" dur="8.5s" begin="-3.2s" repeatCount="indefinite"/></text>
+      <text x="916" y="88" opacity="0.48">ROUTES<animate attributeName="opacity" values="0.3;0.62;0.3" dur="6.4s" begin="-5.1s" repeatCount="indefinite"/></text>
+      <text x="887" y="313" opacity="0.48">IMPACT<animate attributeName="opacity" values="0.3;0.62;0.3" dur="9.2s" begin="-2.4s" repeatCount="indefinite"/></text>
+    </g>
   </g>
 </svg>
