@@ -129,7 +129,7 @@ describe('DSH plugin registration', () => {
     await ctx.fiber.dispose()
   }, 30_000)
 
-  it('does not hold turn stopping open behind background indexing', async () => {
+  it('does not hold pre-step or turn stopping open behind background indexing', async () => {
     const subject = {
       id: 'agent-fovea-nonblocking',
       session: { id: 'session-fovea-nonblocking', header: { cwd: root } },
@@ -149,6 +149,18 @@ describe('DSH plugin registration', () => {
     await entered.promise
 
     const signal = new AbortController().signal
+    const prompt = createUserMessage({
+      content: [{ type: 'text', text: 'first request while indexing' }],
+      source: { kind: 'user' },
+    })
+    await expect(Promise.race([
+      events.waterfall(
+        'agent/pre-step',
+        { messages: [prompt], turn: 1, step: 1, signal },
+        () => Promise.resolve({ kind: 'enter' as const, messages: [prompt] }),
+      ),
+      new Promise((_resolve, reject) => setTimeout(() => { reject(new Error('pre-step waited for Fovea indexing')) }, 250)),
+    ])).resolves.toMatchObject({ kind: 'enter', messages: [prompt] })
     await expect(Promise.race([
       events.serial('agent/turn-stopping', { turn: 1, signal }),
       new Promise((_resolve, reject) => setTimeout(() => { reject(new Error('turn stopping waited for Fovea indexing')) }, 250)),

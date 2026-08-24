@@ -3,7 +3,7 @@ import type { Agent, PreStepDecision } from '@monotykamary/dsh-agent'
 import { createUserMessage } from '@monotykamary/dsh-llm'
 import type { ToolExecutionResult } from '@monotykamary/dsh-tools'
 import { clearDshFoveaAgentScope, DshFoveaRuntime, setDshFoveaAgentScope } from './dsh-runtime.js'
-import { ensureState } from './core/state.js'
+import { ensureState, getState } from './core/state.js'
 import { recordMutationTransitions } from './core/provenance.js'
 import { sync, warmSync, type SyncOutcome } from './core/sync.js'
 import { getSession, observeSessionPaths } from './core/session.js'
@@ -178,7 +178,11 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     const observed = attentionPath(exec.arguments)
     const discloses = exec.name.startsWith('fovea_')
     if (agent === undefined || (!discloses && observed === undefined)) return next()
-    lineageFor(agent)
+    const lineage = lineageFor(agent)
+    if (discloses) {
+      await (syncTails.get(lineage) ?? Promise.resolve())
+      exec.signal.throwIfAborted()
+    }
     let runtime: DshFoveaRuntime
     try {
       runtime = await DshFoveaRuntime.create(ctx, agent, exec.signal)
@@ -238,14 +242,23 @@ export function registerFoveaIntegration(ctx: Context, config: ResolvedConfig): 
     if (decision.kind === 'reject' || signal.aborted) return decision
     const additions: ReturnType<typeof messageFor>[] = []
     try {
-      const outcome = await runSyncForAgent(agent, signal, root => sync(root, {
+      const params = {
         budget: config.sync.budget,
         steerThreshold: config.sync.steerThreshold,
         pushFocus: config.sync.pushFocus,
         scope: config.sync.scope,
         attentionScopes: attentionFor(agent),
         sessionId: lineageFor(agent),
-      }, undefined, { probe: 'defer' }))
+      }
+      // A cold session-start owns the lineage serializer while it establishes
+      // the baseline. Probe outside that queue so the first model request sees
+      // the in-flight build and proceeds instead of waiting for the full walk.
+      const cold = await runForAgent(agent, signal, root => getState(root) === undefined
+        ? sync(root, params, undefined, { probe: 'defer' })
+        : Promise.resolve(undefined))
+      const outcome = cold ?? await runSyncForAgent(
+        agent, signal, root => sync(root, params, undefined, { probe: 'defer' }),
+      )
       if (outcome.red && outcome.text !== undefined) additions.push(messageFor(outcome.text, config.sync.mode))
       else if (ackDue(outcome)) additions.push(messageFor(ACK_TEXT, config.sync.mode))
     } catch (error: unknown) {
