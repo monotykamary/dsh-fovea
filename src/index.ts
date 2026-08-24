@@ -8,6 +8,7 @@ import type {} from '@monotykamary/dsh-commands'
 import type {} from '@monotykamary/dsh-skill'
 import { resolveConfig, type Config } from './core/config.js'
 import { registerFoveaCommand } from './command.js'
+import { registerFoveaGrep } from './grep.js'
 import { registerFoveaIntegration } from './integration.js'
 import { registerFoveaSkill } from './skill.js'
 import { registerFoveaTools } from './tools.js'
@@ -28,7 +29,15 @@ export function apply(ctx: Context, input: Config = {}): void {
   registerFoveaTools(ctx, config)
   registerFoveaIntegration(ctx, config)
   registerFoveaCommand(ctx, config)
-  registerFoveaSkill(ctx)
+  registerFoveaSkill(ctx, config.grep.mode)
+  registerFoveaGrep(ctx, config)
+  if (config.grep.mode === 'replace') {
+    ctx.systemPrompt.section({
+      name: 'tool:fovea-grep',
+      order: 105,
+      text: 'Use grep normally: path/include filters and obvious regular expressions retain native text semantics; bare symbols, repo paths, and routes use Fovea with native fallback on a miss.',
+    })
+  }
 }
 
 export type { Config, ResolvedConfig, SyncMode } from './core/config.js'

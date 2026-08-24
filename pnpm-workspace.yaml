@@ -20,6 +20,7 @@ overrides:
   '@monotykamary/dsh-fs-local': 'link:../deepseek-harness/packages/fs/fs-local'
   '@monotykamary/dsh-llm': 'link:../deepseek-harness/packages/llm/llm'
   '@monotykamary/dsh-skill': 'link:../deepseek-harness/packages/skill/skill'
+  '@monotykamary/dsh-scope': 'link:../deepseek-harness/packages/core/scope'
   '@monotykamary/dsh-spill': 'link:../deepseek-harness/packages/spill/spill'
   '@monotykamary/dsh-spill-local': 'link:../deepseek-harness/packages/spill/spill-local'
   '@monotykamary/dsh-subprocess': 'link:../deepseek-harness/packages/subprocess/subprocess'

@@ -1,5 +1,6 @@
 import type { Context } from '@monotykamary/cordis'
 import type {} from '@monotykamary/dsh-skill'
+import type { GrepMode } from './core/config.js'
 
 export const FOVEA_SKILL = `# Fovea repository intelligence
 
@@ -23,14 +24,20 @@ Fovea builds a typed, weighted repository graph and reveals only the neighborhoo
 Fovea is complementary to grep and file reads: use graph navigation to decide **where and why**, then use exact text tools to inspect **what**. Treat extraction warnings as coverage limits rather than evidence that a feature is absent. Continuous sync may inject a repository-change notice between steps; account for it before continuing.
 `
 
-export function registerFoveaSkill(ctx: Context): void {
+const GREP_NOTE: Record<GrepMode, string> = {
+  off: '',
+  replace: '- **grep** — bare symbol queries navigate the same Fovea graph with native text fallback; regular expressions and path/include calls stay native text search.\n',
+  augment: '- **grep** — native results for bare symbol queries gain an appended Fovea graph section.\n',
+}
+
+export function registerFoveaSkill(ctx: Context, grepMode: GrepMode = 'augment'): void {
   ctx.inject(['skills'], (skillCtx) => {
     skillCtx.skills.register({
       name: 'fovea',
       description: 'Navigate repository structure, focus semantic neighborhoods, and estimate change impact with Fovea.',
       whenToUse: 'Use for unfamiliar repositories, cross-file dependency questions, routes and handlers, test discovery, or blast-radius review.',
       source: 'runtime',
-      content: FOVEA_SKILL,
+      content: FOVEA_SKILL.replace('\n## Working pattern', `\n${GREP_NOTE[grepMode]}\n## Working pattern`),
     })
   })
 }

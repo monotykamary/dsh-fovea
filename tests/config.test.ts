@@ -8,6 +8,7 @@ describe('DSH Fovea config', () => {
       defaultBudget: 512,
       toolTimeoutMs: 120_000,
       sync: { mode: 'enabled', scope: 'session', budget: 512, steerThreshold: 0.15, pushFocus: true, ackClean: false, warmMutations: true },
+      grep: { mode: 'augment', augmentBudget: 512 },
     })
   })
 
@@ -23,6 +24,12 @@ describe('DSH Fovea config', () => {
   it('loads repository-wide sync explicitly', () => {
     expect(resolveConfig({ sync: { scope: 'repository' } }).sync.scope).toBe('repository')
     expect(resolveConfig({ sync: { scope: 'repository' } }).sync.mode).toBe('enabled')
+  })
+
+  it('resolves the native-grep integration, defaulting to pi-fovea semantics', () => {
+    expect(resolveConfig().grep).toEqual({ mode: 'augment', augmentBudget: 512 })
+    expect(resolveConfig({ grep: { mode: 'replace' } }).grep).toEqual({ mode: 'replace', augmentBudget: 512 })
+    expect(resolveConfig({ grep: { mode: 'off', augmentBudget: 1024 } }).grep).toEqual({ mode: 'off', augmentBudget: 1024 })
   })
 
   it('lets FOVEA_TURN_SYNC=off override the Cordis profile', () => {
@@ -45,6 +52,9 @@ describe('DSH Fovea config', () => {
     [{ sync: { scope: 'workspace' } }, /sync.scope/],
     [{ sync: { steerThreshold: Number.NaN } }, /sync.steerThreshold/],
     [{ sync: { ackClean: 'yes' } }, /sync.ackClean/],
+    [{ grep: { nope: true } }, /unknown grep key/],
+    [{ grep: { mode: 'shadow' } }, /grep.mode/],
+    [{ grep: { augmentBudget: 3 } }, /grep.augmentBudget/],
   ])('rejects malformed input %#', (input, message) => {
     expect(() => resolveConfig(input as never)).toThrow(message)
   })

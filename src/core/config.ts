@@ -4,6 +4,8 @@ export const SYNC_MODES = ['enabled', 'hidden', 'disabled'] as const
 export type SyncMode = (typeof SYNC_MODES)[number]
 export const SYNC_SCOPES = ['session', 'repository'] as const
 export type SyncScope = (typeof SYNC_SCOPES)[number]
+export const GREP_MODES = ['off', 'replace', 'augment'] as const
+export type GrepMode = (typeof GREP_MODES)[number]
 
 export interface Config {
   /** Default output budget when a fovea tool omits max_tokens. */
@@ -27,6 +29,15 @@ export interface Config {
     /** Warm graph state after successful mutation tools to shorten turn-stop latency. */
     warmMutations?: boolean
   }
+  /** Native grep integration, mirroring pi-fovea's tools.grepMode. */
+  grep?: {
+    /** off: native grep untouched; replace: agent-scoped shadow where bare symbol queries
+     * navigate the graph; augment (default): native grep always runs and symbol-query
+     * results gain an appended Fovea graph section. */
+    mode?: GrepMode
+    /** Token budget for the graph section appended in augment mode. */
+    augmentBudget?: number
+  }
 }
 
 export interface ResolvedConfig {
@@ -41,6 +52,10 @@ export interface ResolvedConfig {
     ackClean: boolean
     warmMutations: boolean
   }
+  grep: {
+    mode: GrepMode
+    augmentBudget: number
+  }
 }
 
 export const DEFAULT_CONFIG: ResolvedConfig = {
@@ -54,6 +69,10 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
     pushFocus: true,
     ackClean: false,
     warmMutations: true,
+  },
+  grep: {
+    mode: 'augment',
+    augmentBudget: 512,
   },
 }
 
@@ -94,7 +113,13 @@ const boolean = (value: unknown, fallback: boolean, label: string): boolean => {
 
 export function resolveConfig(input: Config = {}): ResolvedConfig {
   const raw = object(input, 'config')
-  unknownKeys(raw, ['defaultBudget', 'toolTimeoutMs', 'sync'], 'config')
+  unknownKeys(raw, ['defaultBudget', 'toolTimeoutMs', 'sync', 'grep'], 'config')
+  const grep = object(raw.grep, 'grep')
+  unknownKeys(grep, ['mode', 'augmentBudget'], 'grep')
+  const grepMode = grep.mode ?? DEFAULT_CONFIG.grep.mode
+  if (typeof grepMode !== 'string' || !GREP_MODES.includes(grepMode as GrepMode)) {
+    throw new TypeError(`dsh-fovea: grep.mode must be one of ${GREP_MODES.join(', ')}`)
+  }
   const sync = object(raw.sync, 'sync')
   unknownKeys(sync, ['mode', 'scope', 'budget', 'steerThreshold', 'pushFocus', 'ackClean', 'warmMutations'], 'sync')
   const mode = sync.mode ?? DEFAULT_CONFIG.sync.mode
@@ -120,6 +145,10 @@ export function resolveConfig(input: Config = {}): ResolvedConfig {
       pushFocus: boolean(sync.pushFocus, DEFAULT_CONFIG.sync.pushFocus, 'sync.pushFocus'),
       ackClean: boolean(sync.ackClean, DEFAULT_CONFIG.sync.ackClean, 'sync.ackClean'),
       warmMutations: boolean(sync.warmMutations, DEFAULT_CONFIG.sync.warmMutations, 'sync.warmMutations'),
+    },
+    grep: {
+      mode: grepMode as GrepMode,
+      augmentBudget: integer(grep.augmentBudget, DEFAULT_CONFIG.grep.augmentBudget, 256, 8_192, 'grep.augmentBudget'),
     },
   }
 }

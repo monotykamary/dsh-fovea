@@ -40,7 +40,7 @@ Every model tool returns one canonical JSON value:
 { text: string, tokens: number, details: Record<string, JSONValue> }
 ```
 
-Harness renders `text` to the model while Code Mode and other programmatic callers retain `tokens` and `details`. Fovea does **not** replace native grep or exact file reads: use it to decide where and why, then inspect the selected source precisely.
+Harness renders `text` to the model while Code Mode and other programmatic callers retain `tokens` and `details`. Fovea does **not** replace native grep or exact file reads: use it to decide where and why, then inspect the selected source precisely. (`grep.mode: replace` opts into the pi-fovea takeover where bare symbol queries navigate the graph natively inside `grep`; see Configuration.)
 
 ## Requirements
 
@@ -151,6 +151,9 @@ The bundle patch inserts one row with id `dsh-fovea`. Override it in the selecte
       pushFocus: true
       ackClean: false
       warmMutations: true
+  grep:
+    mode: augment
+    augmentBudget: 512
 ```
 
 | Key | Default | Valid values |
@@ -164,8 +167,12 @@ The bundle patch inserts one row with id `dsh-fovea`. Override it in the selecte
 | `sync.pushFocus` | `true` | boolean |
 | `sync.ackClean` | `false` | boolean — tiny "nothing new" ack after a clean structural check |
 | `sync.warmMutations` | `true` | boolean |
+| `grep.mode` | `augment` | `off` leaves native grep untouched; `replace` shadows `grep` per agent so bare symbol queries navigate the graph with native fallback; `augment` keeps native grep and appends a Fovea graph section to symbol-query results |
+| `grep.augmentBudget` | `512` | integer `256–8192` |
 
 Unknown configuration keys fail plugin loading. `enabled` emits plugin `notice` messages; `hidden` uses plugin `instructions` messages for the model; `disabled` removes sync and mutation-attribution hooks while keeping explicit tools, command, and skill. The deployment-level `FOVEA_TURN_SYNC=off` (also `0` or `false`) escape hatch always forces disabled mode.
+
+`grep.mode` mirrors pi-fovea's takeover. `replace` registers an agent-scoped `grep` definition shadowing the deployment's native one (registrations unwind with the agent): bare identifiers, qualified symbols, repository paths, and routes run `fovea_focus`-equivalent graph queries, while regex-shaped patterns, `path`/`include` filters, graph misses, and graph failures delegate to the exact native definition — a failure prepends `fovea graph unavailable — native text results (…)` to native output. The shadow carries a `{ matches } | { fovea }` union output; `run_code` consumers should branch on the key. Native truncation still spills: because the shadow owns the call, dsh-fovea (not dsh-tool-fs-search) re-saves the complete capped match list through the call-owned spill. `augment` fires only for top-level successful calls whose pattern is symbol-like, and scopes the appended section by `path` when given; it never alters the result on graph errors or misses. Both modes apply only where a native `grep` tool is registered; otherwise only a one-time warning is logged.
 
 ### Advanced environment controls
 
@@ -233,7 +240,8 @@ flowchart LR
 | Graph types, joins, basins, extraction facts, heat diffusion, ranking, rendering | Reused with minimal algorithmic change. |
 | Filesystem discovery, ast-grep, Git, caches, provenance, overflow | Retained behind the `FoveaRuntime` capability seam and DSH providers. |
 | Focus, dwell, disclosure, sync baselines, surprise memory | Agent/workspace-scoped rather than root-global. |
-| Pi entry point, event names, TUI widgets/settings, hidden-message API, grep takeover | Not reused; replaced by Cordis plugin loading, canonical DSH tools, agent events, command, skill, and system-prompt guidance. |
+| Grep takeover (`tools.grepMode`) | Reused as `grep.mode`: `replace` shadows `grep` per agent through scoped tool registration (global names stay unique); `augment` appends graph sections via `tools/post-execute`. |
+| Pi entry point, event names, TUI widgets/settings, hidden-message API | Not reused; replaced by Cordis plugin loading, canonical DSH tools, agent events, command, skill, and system-prompt guidance. |
 
 There is intentionally no browser client plugin: dsh-fovea contributes server/runtime behavior and appears through existing Harness tool, command, skill, and transcript surfaces.
 
